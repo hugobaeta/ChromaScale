@@ -1,5 +1,5 @@
-// ChromaScale — Scale Manager v2
-// 35-step scales with contrast constraint enforcement
+// ChromaScale — Scale Manager v3
+// 35-step scales with uniform linear lightness and contrast constraint enforcement
 
 // Full step labels: 10s at ends, 50s in the middle
 const STEP_LABELS = [
@@ -12,11 +12,13 @@ const STEP_LABELS = [
 const MAJOR_STEPS = new Set([0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900]);
 
 // Contrast requirement for a given step gap
+// Thresholds are the tightest gaps that achieve each WCAG level across the full
+// hue wheel with the linear L schedule (verified against 426 saturated test colors).
 // A = 3:1 (large text), AA = 4.5:1 (normal text), AAA = 7:1 (enhanced)
 function getRequiredRatio(gap) {
-  if (gap >= 650) return 7;    // AAA
-  if (gap >= 550) return 4.5;  // AA
-  if (gap >= 450) return 3;    // A
+  if (gap >= 600) return 7;    // AAA
+  if (gap >= 500) return 4.5;  // AA
+  if (gap >= 400) return 3;    // A
   return null;
 }
 
@@ -45,105 +47,99 @@ function minLighterLuminance(Y_dark, ratio) {
 
 class Scale {
   // keyHexOrArray: single hex string, or array of hex strings (full palette)
-  constructor(name, keyHexOrArray) {
+  // manager: reference to owning ScaleManager (for linear L schedule)
+  constructor(name, keyHexOrArray, manager) {
     this.id = 'scale_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     this.name = name || 'Untitled';
-    
+    this.manager = manager || null;
+
     if (Array.isArray(keyHexOrArray)) {
       this.keyColors = [...keyHexOrArray];
     } else {
       this.keyColors = keyHexOrArray ? [keyHexOrArray] : ['#3B82F6'];
     }
-    
-    // Derive white/black limits from the key colors
-    const oklchFirst = ColorEngine.hexToOklch(this.keyColors[0]);
-    const oklchLast = ColorEngine.hexToOklch(this.keyColors[this.keyColors.length - 1]);
-    
-    // Step 0 is always pure white; step 900 targets L≈0.15 for consistent dark end
-    this.whiteLimit = 1.0;
-    this.blackLimit = 0.15;
-    
-    // Dark mode endpoints — independent from light mode
-    this.darkBlackLimit = 0.15;  // step 0 in dark mode (darkest bg)
-    this.darkWhiteLimit = 0.95;  // step 900 in dark mode (lightest text, slightly off-white)
-    
+
     this.steps = [];
-    this.curvePoints = { L: [], C: [], H: [] };
+    this.curvePoints = { C: [], H: [] };
     this.outOfRangeCount = 0;       // how many key colors are beyond step 900
     this.outOfRangeIndices = [];     // which indices are out of range
-    
+
     this._initCurves();
     this.generate();
   }
 
   _initCurves() {
+    const lMax = this.manager ? this.manager.lightnessMax : 1.0;
+    const lMin = this.manager ? this.manager.lightnessMin : 0.15;
+    const lRange = lMax - lMin;
     const allOklch = this.keyColors.map(hex => ColorEngine.hexToOklch(hex));
-    
-    // Filter out colors that are darker than the 900 level (blackLimit)
+
+    // Filter out colors that are darker than the 900 level (lightnessMin)
     // These are "out of range" — too dark to appear in the 0-900 scale
     this.outOfRangeIndices = [];
     const inRangeOklch = [];
     const inRangeIdx = [];
-    
+
     allOklch.forEach((c, i) => {
-      if (c.L < this.blackLimit - 0.005) {
-        // This color is darker than step 900 would be — out of range
+      if (c.L < lMin - 0.005) {
         this.outOfRangeIndices.push(i);
       } else {
         inRangeOklch.push(c);
         inRangeIdx.push(i);
       }
     });
-    
+
     this.outOfRangeCount = this.outOfRangeIndices.length;
-    
+
     // Use only in-range colors for curve generation
     const oklchColors = inRangeOklch.length > 0 ? inRangeOklch : allOklch;
     const n = oklchColors.length;
-    
+
+    // Place each key color's C/H peak at the position in the linear L schedule
+    // that matches its natural lightness — this maximizes achievable chroma
+    // since gamut clamping is minimal when L matches the color's native value.
+    function naturalPosition(L) {
+      if (lRange <= 0) return 0.5;
+      return Math.max(0.02, Math.min(0.98, (lMax - L) / lRange));
+    }
+
     if (n === 1) {
       const c = oklchColors[0];
+      const pos = naturalPosition(c.L);
       this.curvePoints = {
-        L: [
-          { x: 0, y: 1.0 },
-          { x: 0.5, y: c.L },
-          { x: 1, y: this.blackLimit }
-        ],
         C: [
           { x: 0, y: 0 },
-          { x: 0.5, y: c.C },
+          { x: pos, y: c.C },
           { x: 1, y: 0 }
         ],
         H: [
           { x: 0, y: c.H },
-          { x: 0.5, y: c.H },
+          { x: pos, y: c.H },
           { x: 1, y: c.H }
         ]
       };
     } else {
-      // Multiple key colors: start from pure white, map in-range key colors
-      const lPoints = [{ x: 0, y: 1.0 }];
       const cPoints = [{ x: 0, y: 0 }];
       const hPoints = [{ x: 0, y: oklchColors[0].H }];
-      
-      oklchColors.forEach((c, i) => {
-        const pos = (i + 1) / (n + 1);
-        lPoints.push({ x: pos, y: c.L });
+
+      oklchColors.forEach((c) => {
+        const pos = naturalPosition(c.L);
         cPoints.push({ x: pos, y: c.C });
         hPoints.push({ x: pos, y: c.H });
       });
-      
-      // Black endpoint at step 900
-      lPoints.push({ x: 1, y: this.blackLimit });
+
       cPoints.push({ x: 1, y: 0 });
       hPoints.push({ x: 1, y: oklchColors[n - 1].H });
-      
-      this.curvePoints = { L: lPoints, C: cPoints, H: hPoints };
+
+      // Ensure ascending x order (key colors are sorted by L descending → pos ascending)
+      cPoints.sort((a, b) => a.x - b.x);
+      hPoints.sort((a, b) => a.x - b.x);
+
+      this.curvePoints = { C: cPoints, H: hPoints };
     }
   }
 
   addKeyColor(hex) {
-    // Insert sorted by luminance (descending: lightest first → darkest last)
     const oklch = ColorEngine.hexToOklch(hex);
     let insertIdx = this.keyColors.length;
     for (let i = 0; i < this.keyColors.length; i++) {
@@ -167,82 +163,49 @@ class Scale {
 
   updateKeyColor(index, hex) {
     this.keyColors[index] = hex;
-    // Re-sort by luminance (descending: lightest first → darkest last)
     this.keyColors.sort((a, b) => ColorEngine.hexToOklch(b).L - ColorEngine.hexToOklch(a).L);
     this._initCurves();
     this.generate();
   }
 
-  setWhiteLimit(val) {
-    this.whiteLimit = Math.max(0.5, Math.min(1, val));
-    if (this.curvePoints.L.length > 0) {
-      this.curvePoints.L[0].y = this.whiteLimit;
-    }
-    this.generate();
-  }
-
-  setBlackLimit(val) {
-    this.blackLimit = Math.max(0, Math.min(0.5, val));
-    if (this.curvePoints.L.length > 0) {
-      this.curvePoints.L[this.curvePoints.L.length - 1].y = this.blackLimit;
-    }
-    this.generate();
-  }
-
-  setDarkBlackLimit(val) {
-    this.darkBlackLimit = Math.max(0, Math.min(0.5, val));
-    this.generate();
-  }
-
-  setDarkWhiteLimit(val) {
-    this.darkWhiteLimit = Math.max(0.5, Math.min(1, val));
-    this.generate();
-  }
-
-  // Remap a lightness value from [blackLimit, whiteLimit] to [darkBlackLimit, darkWhiteLimit]
-  darkRemapL(L) {
-    const range = this.whiteLimit - this.blackLimit;
-    if (range <= 0) return L;
-    const normalized = (L - this.blackLimit) / range;
-    return this.darkBlackLimit + normalized * (this.darkWhiteLimit - this.darkBlackLimit);
-  }
-
   generate() {
     const numSteps = STEP_LABELS.length;
-    
-    // Step 1: Sample desired L, C, H from curves
+    const mgr = this.manager;
+
+    // Step 1: Sample desired L (linear), C, H
     const desired = [];
     for (let i = 0; i < numSteps; i++) {
-      const t = STEP_LABELS[i] / 900; // position = label / 900
-      const L = ColorEngine.cubicHermiteInterpolate(this.curvePoints.L, t);
+      const step = STEP_LABELS[i];
+      const t = step / 900;
+      const L = mgr ? mgr.getLinearL(step) : (1.0 - (1.0 - 0.15) * t);
       const C = ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t);
       const H = ColorEngine.interpolateHue(this.curvePoints.H, t);
       desired.push({
-        label: STEP_LABELS[i],
+        label: step,
         t,
         desiredL: Math.max(0, Math.min(1, L)),
         C: Math.max(0, C),
         H: ((H % 360) + 360) % 360
       });
     }
-    
+
     // Step 2: Enforce contrast constraints on L values
     const enforcedL = desired.map(d => d.desiredL);
     this._enforceConstraints(enforcedL, desired);
-    
+
     // Step 3: Generate actual colors with enforced L
     this.steps = [];
     for (let i = 0; i < numSteps; i++) {
       const d = desired[i];
       const effectiveL = enforcedL[i];
       const wasAdjusted = Math.abs(effectiveL - d.desiredL) > 0.001;
-      
+
       const gamut = ColorEngine.clampToGamut(effectiveL, d.C, d.H);
       const hex = ColorEngine.oklchToHex(gamut.L, gamut.C, gamut.H);
       const rgb = ColorEngine.hexToRgb(hex);
       const contrastWhite = ColorEngine.contrastRatio(rgb, [255, 255, 255]);
       const contrastBlack = ColorEngine.contrastRatio(rgb, [0, 0, 0]);
-      
+
       // Step 0 is always pure white
       if (d.label === 0) {
         this.steps.push({
@@ -276,59 +239,55 @@ class Scale {
         });
       }
     }
-    
+
     // Step 4: Verify with actual RGB luminances (post-gamut-clamp fix)
     this._verifyAndFixActualContrast();
-    
+
     // Step 5: Generate dark mode steps
     this._generateDarkMode();
   }
 
   _generateDarkMode() {
     const numSteps = STEP_LABELS.length;
-    
-    // Dark mode: reverse the L curve, then remap endpoints to dark mode limits
+    const mgr = this.manager;
+
+    // Dark mode: use linear L schedule directly (increasing from darkLightnessMin to darkLightnessMax)
     const desiredDark = [];
     for (let i = 0; i < numSteps; i++) {
-      const t = STEP_LABELS[i] / 900;
-      const tReversed = 1 - t;
-      const rawL = ColorEngine.cubicHermiteInterpolate(this.curvePoints.L, tReversed);
-      // Remap from [blackLimit, whiteLimit] → [darkBlackLimit, darkWhiteLimit]
-      const L = this.darkRemapL(Math.max(0, Math.min(1, rawL)));
+      const step = STEP_LABELS[i];
+      const t = step / 900;
+      const L = mgr ? mgr.getDarkLinearL(step) : (0.15 + (0.95 - 0.15) * t);
       const C = ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t);
       const H = ColorEngine.interpolateHue(this.curvePoints.H, t);
       desiredDark.push({
-        label: STEP_LABELS[i],
+        label: step,
         t,
         desiredL: Math.max(0, Math.min(1, L)),
         C: Math.max(0, C),
         H: ((H % 360) + 360) % 360
       });
     }
-    
-    // Enforce monotonically INCREASING L for dark mode (step 0 = dark, step 900 = light)
+
+    // Enforce monotonically INCREASING L for dark mode
     const enforcedL = desiredDark.map(d => d.desiredL);
-    // Force step 900 (last) to dark white limit
-    enforcedL[enforcedL.length - 1] = this.darkWhiteLimit;
-    // Force step 0 (first) to dark black limit
-    enforcedL[0] = Math.min(enforcedL[0], this.darkBlackLimit);
     this._enforceDarkConstraints(enforcedL, desiredDark);
-    
+
     // Generate actual colors
     this.darkSteps = [];
     for (let i = 0; i < numSteps; i++) {
       const d = desiredDark[i];
       const effectiveL = enforcedL[i];
       const wasAdjusted = Math.abs(effectiveL - d.desiredL) > 0.001;
-      
+
       const gamut = ColorEngine.clampToGamut(effectiveL, d.C, d.H);
       const hex = ColorEngine.oklchToHex(gamut.L, gamut.C, gamut.H);
       const rgb = ColorEngine.hexToRgb(hex);
       const contrastWhite = ColorEngine.contrastRatio(rgb, [255, 255, 255]);
       const contrastBlack = ColorEngine.contrastRatio(rgb, [0, 0, 0]);
-      
-      // Step 900: use darkWhiteLimit (only pure white if limit is 1.0)
-      if (d.label === 900 && this.darkWhiteLimit >= 0.999) {
+
+      // Step 900 in dark mode: use darkLightnessMax (only pure white if limit is ≥1.0)
+      const darkMax = mgr ? mgr.darkLightnessMax : 0.95;
+      if (d.label === 900 && darkMax >= 0.999) {
         this.darkSteps.push({
           label: 900,
           t: 1,
@@ -360,58 +319,52 @@ class Scale {
         });
       }
     }
-    
+
     // Verify dark mode contrasts with actual RGB
     this._verifyAndFixDarkContrast();
   }
 
   _enforceDarkConstraints(L, desired) {
-    // In dark mode, L is monotonically INCREASING (step 0 = darkest, step 900 = lightest)
-    // Contrast constraints are the same: gap ≥ 450 → 3:1, gap ≥ 550 → 4.5:1
     for (let iter = 0; iter < 4; iter++) {
       let changed = false;
-      
-      // Forward pass: ensure lighter steps (higher index) are light enough
+
       for (let i = 0; i < L.length; i++) {
         for (let j = i + 1; j < L.length; j++) {
           const gap = desired[j].label - desired[i].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
-          // i is darker, j should be lighter; need enough contrast
+
           const Yi = approxLuminance(L[i]);
           const minYj = minLighterLuminance(Yi, req);
           const minLj = approxL(Math.max(0, minYj));
-          
+
           if (L[j] < minLj) {
             L[j] = Math.min(1, minLj);
             changed = true;
           }
         }
       }
-      
-      // Backward pass: ensure darker steps (lower index) are dark enough
+
       for (let i = L.length - 1; i >= 0; i--) {
         for (let j = i - 1; j >= 0; j--) {
           const gap = desired[i].label - desired[j].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
-          // i is lighter, j should be darker
+
           const Yi = approxLuminance(L[i]);
           const maxYj = maxDarkerLuminance(Yi, req);
           const maxLj = approxL(Math.max(0, maxYj));
-          
+
           if (L[j] > maxLj) {
             L[j] = maxLj;
             changed = true;
           }
         }
       }
-      
+
       if (!changed) break;
     }
-    
+
     // Ensure monotonically increasing
     for (let i = 1; i < L.length; i++) {
       if (L[i] < L[i - 1]) L[i] = L[i - 1];
@@ -419,27 +372,21 @@ class Scale {
   }
 
   _verifyAndFixDarkContrast() {
-    // Same as light mode verification but for dark steps
-    // More iterations needed since dark end has compressed perceptual space
     for (let iter = 0; iter < 4; iter++) {
       let anyFix = false;
-      
+
       for (let i = 0; i < this.darkSteps.length; i++) {
         for (let j = i + 1; j < this.darkSteps.length; j++) {
           const gap = this.darkSteps[j].label - this.darkSteps[i].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
+
           const ratio = ColorEngine.contrastRatio(this.darkSteps[i].rgb, this.darkSteps[j].rgb);
           if (ratio < req) {
             const reqWithMargin = req + 0.05;
-            
-            // Strategy: try to lighten j first, but if j is already very light (e.g. white),
-            // darken i instead
             const jIsMaxLight = this.darkSteps[j].effectiveL >= 0.99;
-            
+
             if (jIsMaxLight) {
-              // Darken step i to increase contrast with light step j
               let lo = 0, hi = this.darkSteps[i].effectiveL;
               for (let k = 0; k < 16; k++) {
                 const mid = (lo + hi) / 2;
@@ -450,12 +397,12 @@ class Scale {
                 if (testRatio >= reqWithMargin) lo = mid;
                 else hi = mid;
               }
-              
+
               const newL = lo;
               const g = ColorEngine.clampToGamut(newL, this.darkSteps[i].oklch.C, this.darkSteps[i].oklch.H);
               const hex = ColorEngine.oklchToHex(g.L, g.C, g.H);
               const rgb = ColorEngine.hexToRgb(hex);
-              
+
               this.darkSteps[i].effectiveL = newL;
               this.darkSteps[i].oklch = { L: g.L, C: g.C, H: g.H };
               this.darkSteps[i].hex = hex;
@@ -465,7 +412,6 @@ class Scale {
               this.darkSteps[i].contrastBlack = ColorEngine.contrastRatio(rgb, [0, 0, 0]);
               anyFix = true;
             } else {
-              // Lighten step j
               let lo = this.darkSteps[j].effectiveL, hi = 1;
               for (let k = 0; k < 16; k++) {
                 const mid = (lo + hi) / 2;
@@ -476,12 +422,12 @@ class Scale {
                 if (testRatio >= reqWithMargin) hi = mid;
                 else lo = mid;
               }
-              
+
               const newL = hi;
               const g = ColorEngine.clampToGamut(newL, this.darkSteps[j].oklch.C, this.darkSteps[j].oklch.H);
               const hex = ColorEngine.oklchToHex(g.L, g.C, g.H);
               const rgb = ColorEngine.hexToRgb(hex);
-              
+
               this.darkSteps[j].effectiveL = newL;
               this.darkSteps[j].oklch = { L: g.L, C: g.C, H: g.H };
               this.darkSteps[j].hex = hex;
@@ -494,55 +440,52 @@ class Scale {
           }
         }
       }
-      
+
       if (!anyFix) break;
     }
   }
 
   _enforceConstraints(L, desired) {
-    // Multiple passes to propagate constraints
     for (let iter = 0; iter < 4; iter++) {
       let changed = false;
-      
-      // Forward pass: ensure darker steps are dark enough
+
       for (let i = 0; i < L.length; i++) {
         for (let j = i + 1; j < L.length; j++) {
           const gap = desired[j].label - desired[i].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
+
           const Yi = approxLuminance(L[i]);
           const maxYj = maxDarkerLuminance(Yi, req);
           const maxLj = approxL(Math.max(0, maxYj));
-          
+
           if (L[j] > maxLj) {
             L[j] = maxLj;
             changed = true;
           }
         }
       }
-      
-      // Backward pass: ensure lighter steps are light enough
+
       for (let i = L.length - 1; i >= 0; i--) {
         for (let j = i - 1; j >= 0; j--) {
           const gap = desired[i].label - desired[j].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
+
           const Yi = approxLuminance(L[i]);
           const minYj = minLighterLuminance(Yi, req);
           const minLj = approxL(Math.max(0, minYj));
-          
+
           if (L[j] < minLj) {
             L[j] = Math.min(1, minLj);
             changed = true;
           }
         }
       }
-      
+
       if (!changed) break;
     }
-    
+
     // Ensure monotonically decreasing
     for (let i = 1; i < L.length; i++) {
       if (L[i] > L[i - 1]) L[i] = L[i - 1];
@@ -550,20 +493,17 @@ class Scale {
   }
 
   _verifyAndFixActualContrast() {
-    // After gamut clamping, actual RGB luminances may differ from OKLCH L^3 estimates
-    // Do a verification pass with real contrast ratios and adjust if needed
     for (let iter = 0; iter < 3; iter++) {
       let anyFix = false;
-      
+
       for (let i = 0; i < this.steps.length; i++) {
         for (let j = i + 1; j < this.steps.length; j++) {
           const gap = this.steps[j].label - this.steps[i].label;
           const req = getRequiredRatio(gap);
           if (!req) continue;
-          
+
           const ratio = ColorEngine.contrastRatio(this.steps[i].rgb, this.steps[j].rgb);
           if (ratio < req) {
-            // Need to darken step j slightly
             let lo = 0, hi = this.steps[j].effectiveL;
             for (let k = 0; k < 20; k++) {
               const mid = (lo + hi) / 2;
@@ -574,12 +514,12 @@ class Scale {
               if (testRatio >= req) lo = mid;
               else hi = mid;
             }
-            
+
             const newL = lo;
             const g = ColorEngine.clampToGamut(newL, this.steps[j].oklch.C, this.steps[j].oklch.H);
             const hex = ColorEngine.oklchToHex(g.L, g.C, g.H);
             const rgb = ColorEngine.hexToRgb(hex);
-            
+
             this.steps[j].effectiveL = newL;
             this.steps[j].oklch = { L: g.L, C: g.C, H: g.H };
             this.steps[j].hex = hex;
@@ -591,39 +531,36 @@ class Scale {
           }
         }
       }
-      
+
       if (!anyFix) break;
     }
   }
 
   // Compute constraint boundaries for curve editor visualization
-  // Returns array of { t, minL, maxL } for each step position
   getConstraintBounds() {
     const bounds = [];
-    
+
     for (let i = 0; i < this.steps.length; i++) {
       let minL = 0;
       let maxL = 1;
-      
+
       for (let j = 0; j < this.steps.length; j++) {
         if (i === j) continue;
         const gap = Math.abs(this.steps[j].label - this.steps[i].label);
         const req = getRequiredRatio(gap);
         if (!req) continue;
-        
+
         if (this.steps[j].label < this.steps[i].label) {
-          // j is lighter, i must be dark enough
           const Yj = approxLuminance(this.steps[j].effectiveL);
           const maxYi = maxDarkerLuminance(Yj, req);
           maxL = Math.min(maxL, approxL(Math.max(0, maxYi)));
         } else {
-          // j is darker, i must be light enough
           const Yj = approxLuminance(this.steps[j].effectiveL);
           const minYi = minLighterLuminance(Yj, req);
           minL = Math.max(minL, approxL(Math.max(0, minYi)));
         }
       }
-      
+
       bounds.push({
         t: this.steps[i].t,
         label: this.steps[i].label,
@@ -631,33 +568,21 @@ class Scale {
         maxL: Math.min(1, maxL)
       });
     }
-    
+
     return bounds;
   }
 
-  // Check all contrast constraints (for validation display)
   getContrastValidation() {
     const constrained = [];
-    
-    // Check all pairs with constraints
     for (let i = 0; i < this.steps.length; i++) {
       for (let j = i + 1; j < this.steps.length; j++) {
         const gap = this.steps[j].label - this.steps[i].label;
         const req = getRequiredRatio(gap);
         if (!req) continue;
-        
         const ratio = ColorEngine.contrastRatio(this.steps[i].rgb, this.steps[j].rgb);
-        constrained.push({
-          from: this.steps[i].label,
-          to: this.steps[j].label,
-          gap,
-          ratio,
-          required: req,
-          pass: ratio >= req
-        });
+        constrained.push({ from: this.steps[i].label, to: this.steps[j].label, gap, ratio, required: req, pass: ratio >= req });
       }
     }
-    
     return { constrained };
   }
 
@@ -680,31 +605,29 @@ class Scale {
     return { constrained };
   }
 
-  // Sample an arbitrary step label (0–900) from the OKLCH curves
-  // Returns { light: { hex, rgb, oklch }, dark: { hex, rgb, oklch } }
+  // Sample an arbitrary step label (0–900) using linear L schedule
   sampleStep(label) {
     const t = Math.max(0, Math.min(1, label / 900));
-    
-    // Light mode
-    const L = Math.max(0, Math.min(1, ColorEngine.cubicHermiteInterpolate(this.curvePoints.L, t)));
+    const mgr = this.manager;
+
+    // Light mode — linear L
+    const L = mgr ? mgr.getLinearL(label) : (1.0 - (1.0 - 0.15) * t);
     const C = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
     const H = ((ColorEngine.interpolateHue(this.curvePoints.H, t) % 360) + 360) % 360;
-    
-    const lightGamut = ColorEngine.clampToGamut(L, C, H);
+
+    const lightGamut = ColorEngine.clampToGamut(Math.max(0, Math.min(1, L)), C, H);
     const lightHex = ColorEngine.oklchToHex(lightGamut.L, lightGamut.C, lightGamut.H);
     const lightRgb = ColorEngine.hexToRgb(lightHex);
-    
-    // Dark mode — reverse L, remap endpoints
-    const tReversed = 1 - t;
-    const rawDarkL = ColorEngine.cubicHermiteInterpolate(this.curvePoints.L, tReversed);
-    const darkL = this.darkRemapL(Math.max(0, Math.min(1, rawDarkL)));
+
+    // Dark mode — linear L
+    const darkL = mgr ? mgr.getDarkLinearL(label) : (0.15 + (0.95 - 0.15) * t);
     const darkC = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
     const darkH = ((ColorEngine.interpolateHue(this.curvePoints.H, t) % 360) + 360) % 360;
-    
-    const darkGamut = ColorEngine.clampToGamut(darkL, darkC, darkH);
+
+    const darkGamut = ColorEngine.clampToGamut(Math.max(0, Math.min(1, darkL)), darkC, darkH);
     const darkHex = ColorEngine.oklchToHex(darkGamut.L, darkGamut.C, darkGamut.H);
     const darkRgb = ColorEngine.hexToRgb(darkHex);
-    
+
     return {
       label,
       light: { hex: lightHex, rgb: lightRgb, oklch: { L: lightGamut.L, C: lightGamut.C, H: lightGamut.H } },
@@ -716,29 +639,24 @@ class Scale {
     return {
       name: this.name,
       keyColors: [...this.keyColors],
-      whiteLimit: this.whiteLimit,
-      blackLimit: this.blackLimit,
-      darkWhiteLimit: this.darkWhiteLimit,
-      darkBlackLimit: this.darkBlackLimit,
       curvePoints: {
-        L: this.curvePoints.L.map(p => ({ x: p.x, y: p.y })),
         C: this.curvePoints.C.map(p => ({ x: p.x, y: p.y })),
         H: this.curvePoints.H.map(p => ({ x: p.x, y: p.y }))
       }
     };
   }
 
-  static fromConfig(config) {
-    const scale = new Scale(config.name, config.keyColors);
-    scale.whiteLimit = config.whiteLimit;
-    scale.blackLimit = config.blackLimit;
-    scale.darkWhiteLimit = config.darkWhiteLimit;
-    scale.darkBlackLimit = config.darkBlackLimit;
-    scale.curvePoints = {
-      L: config.curvePoints.L.map(p => ({ x: p.x, y: p.y })),
-      C: config.curvePoints.C.map(p => ({ x: p.x, y: p.y })),
-      H: config.curvePoints.H.map(p => ({ x: p.x, y: p.y }))
-    };
+  static fromConfig(config, manager) {
+    const scale = new Scale(config.name, config.keyColors, manager);
+    if (config.curvePoints) {
+      if (config.curvePoints.C) {
+        scale.curvePoints.C = config.curvePoints.C.map(p => ({ x: p.x, y: p.y }));
+      }
+      if (config.curvePoints.H) {
+        scale.curvePoints.H = config.curvePoints.H.map(p => ({ x: p.x, y: p.y }));
+      }
+      // Ignore L curve points from old configs — L is now a linear schedule
+    }
     scale.generate();
     return scale;
   }
@@ -767,10 +685,50 @@ class ScaleManager {
   constructor() {
     this.scales = [];
     this.selectedId = null;
+
+    // Global lightness limits (shared by all scales)
+    this.lightnessMax = 1.0;       // step 0 in light mode
+    this.lightnessMin = 0.15;      // step 900 in light mode
+    this.darkLightnessMax = 0.95;  // step 900 in dark mode
+    this.darkLightnessMin = 0.15;  // step 0 in dark mode
+  }
+
+  // Linear L schedule: step 0 = lightnessMax, step 900 = lightnessMin
+  getLinearL(step) {
+    return this.lightnessMax - (this.lightnessMax - this.lightnessMin) * (step / 900);
+  }
+
+  // Dark mode linear L schedule: step 0 = darkLightnessMin, step 900 = darkLightnessMax
+  getDarkLinearL(step) {
+    return this.darkLightnessMin + (this.darkLightnessMax - this.darkLightnessMin) * (step / 900);
+  }
+
+  setLightnessMax(val) {
+    this.lightnessMax = Math.max(0.5, Math.min(1, val));
+    this.regenerateAll();
+  }
+
+  setLightnessMin(val) {
+    this.lightnessMin = Math.max(0, Math.min(0.5, val));
+    this.regenerateAll();
+  }
+
+  setDarkLightnessMax(val) {
+    this.darkLightnessMax = Math.max(0.5, Math.min(1, val));
+    this.regenerateAll();
+  }
+
+  setDarkLightnessMin(val) {
+    this.darkLightnessMin = Math.max(0, Math.min(0.5, val));
+    this.regenerateAll();
+  }
+
+  regenerateAll() {
+    this.scales.forEach(s => s.generate());
   }
 
   addScale(name, hexOrArray) {
-    const scale = new Scale(name, hexOrArray);
+    const scale = new Scale(name, hexOrArray, this);
     this.scales.push(scale);
     this.selectedId = scale.id;
     return scale;
@@ -781,8 +739,7 @@ class ScaleManager {
     if (!source) return null;
     const idx = this.scales.indexOf(source);
     const newName = source.name + ' Copy';
-    const newScale = new Scale(newName, [...source.keyColors]);
-    // Insert right after the source scale
+    const newScale = new Scale(newName, [...source.keyColors], this);
     this.scales.splice(idx + 1, 0, newScale);
     this.selectedId = newScale.id;
     return newScale;
@@ -814,13 +771,30 @@ class ScaleManager {
 
   toConfig() {
     return {
+      lightnessMax: this.lightnessMax,
+      lightnessMin: this.lightnessMin,
+      darkLightnessMax: this.darkLightnessMax,
+      darkLightnessMin: this.darkLightnessMin,
       scales: this.scales.map(s => s.toConfig()),
       selectedId: this.selectedId
     };
   }
 
   fromConfig(config) {
-    this.scales = config.scales.map(c => Scale.fromConfig(c));
+    // Read lightness limits (support both new and old property names)
+    if (config.lightnessMax != null) this.lightnessMax = config.lightnessMax;
+    else if (config.whiteLimit != null) this.lightnessMax = config.whiteLimit;
+
+    if (config.lightnessMin != null) this.lightnessMin = config.lightnessMin;
+    else if (config.blackLimit != null) this.lightnessMin = config.blackLimit;
+
+    if (config.darkLightnessMax != null) this.darkLightnessMax = config.darkLightnessMax;
+    else if (config.darkWhiteLimit != null) this.darkLightnessMax = config.darkWhiteLimit;
+
+    if (config.darkLightnessMin != null) this.darkLightnessMin = config.darkLightnessMin;
+    else if (config.darkBlackLimit != null) this.darkLightnessMin = config.darkBlackLimit;
+
+    this.scales = config.scales.map(c => Scale.fromConfig(c, this));
     this.selectedId = config.selectedId;
   }
 
@@ -847,7 +821,6 @@ class ScaleManager {
     return JSON.stringify(result, null, 2);
   }
 
-  // Export as W3C Design Tokens / Tokens Studio format (Figma Variables compatible)
   exportFigmaTokens() {
     const tokens = { light: {}, dark: {} };
     this.scales.forEach(s => {

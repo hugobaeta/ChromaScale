@@ -34,7 +34,7 @@ ChromaScale is a fully functional vanilla JS color scale tool. This plan address
   - Step 0 is always #FFFFFF in light mode
   - Steps are monotonically decreasing in lightness (light mode)
   - Dark steps are monotonically increasing in lightness
-  - All WCAG contrast constraints are met (gap ≥450 → 3:1, ≥550 → 4.5:1, ≥650 → 7:1)
+  - All WCAG contrast constraints are met (gap ≥400 → 3:1, ≥500 → 4.5:1, ≥600 → 7:1)
   - `getRequiredRatio` returns correct values for each gap threshold
   - `exportJSON` / `exportAllCSS` produce valid output
   - Adding/removing key colors regenerates correctly

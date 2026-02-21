@@ -129,9 +129,9 @@ Each column contains:
 #### Validation Sidebar
 - **Status badges**: "✓ All constraints met" (green) or "N constraints failed" (red), "N steps adjusted" (blue)
 - **Collapsible constraint groups**:
-  - AAA 7:1 pairs (gap ≥650)
-  - AA 4.5:1 pairs (gap ≥550)
-  - A 3:1 pairs (gap 450–549)
+  - AAA 7:1 pairs (gap ≥600)
+  - AA 4.5:1 pairs (gap ≥500)
+  - A 3:1 pairs (gap 400–499)
 - Each row shows: step pair (e.g., "0→650"), ratio (e.g., "8.42:1"), pass/fail icon
 
 ### 4. Contrast Hover Visualization (In-Place)
@@ -139,7 +139,7 @@ Each column contains:
 
 #### Behavior
 - **Trigger**: Hovering any swatch row
-- **Effect**: Non-contrasting rows dim to `opacity: 0.35`; contrasting rows are highlighted:
+- **Effect**: All other steps show contrast ratio badges; sub-threshold rows dim to `opacity: 0.5`; WCAG-tier rows are highlighted:
   - **A (≥3:1)**: Amber left border (`inset 3px 0 0 #f59e0b`), amber tint background
   - **AA (≥4.5:1)**: Indigo left border (`inset 3px 0 0 #6366f1`), indigo tint background
   - **AAA (≥7:1)**: Emerald left border (`inset 3px 0 0 #10b981`), emerald tint background
