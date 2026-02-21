@@ -40,6 +40,10 @@ class App {
 
   _captureState() {
     return {
+      lightnessMax: this.manager.lightnessMax,
+      lightnessMin: this.manager.lightnessMin,
+      darkLightnessMax: this.manager.darkLightnessMax,
+      darkLightnessMin: this.manager.darkLightnessMin,
       scales: this.manager.scales.map(s => s.toConfig()),
       selectedId: this.manager.selectedId,
       viewMode: this.viewMode
@@ -47,7 +51,11 @@ class App {
   }
 
   _restoreState(snapshot) {
-    this.manager.scales = snapshot.scales.map(c => Scale.fromConfig(c));
+    if (snapshot.lightnessMax != null) this.manager.lightnessMax = snapshot.lightnessMax;
+    if (snapshot.lightnessMin != null) this.manager.lightnessMin = snapshot.lightnessMin;
+    if (snapshot.darkLightnessMax != null) this.manager.darkLightnessMax = snapshot.darkLightnessMax;
+    if (snapshot.darkLightnessMin != null) this.manager.darkLightnessMin = snapshot.darkLightnessMin;
+    this.manager.scales = snapshot.scales.map(c => Scale.fromConfig(c, this.manager));
     this.manager.selectedId = snapshot.selectedId;
     this.viewMode = snapshot.viewMode;
     document.body.classList.toggle('dark-mode', this.viewMode === 'dark');
@@ -227,14 +235,16 @@ class App {
 
   _saveToLocalStorage() {
     try {
-      const data = this.manager.scales.map(s => ({
-        name: s.name,
-        keyColors: s.keyColors,
-        whiteLimit: s.whiteLimit,
-        blackLimit: s.blackLimit,
-        darkWhiteLimit: s.darkWhiteLimit,
-        darkBlackLimit: s.darkBlackLimit
-      }));
+      const data = {
+        lightnessMax: this.manager.lightnessMax,
+        lightnessMin: this.manager.lightnessMin,
+        darkLightnessMax: this.manager.darkLightnessMax,
+        darkLightnessMin: this.manager.darkLightnessMin,
+        scales: this.manager.scales.map(s => ({
+          name: s.name,
+          keyColors: s.keyColors
+        }))
+      };
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
       
       // Show brief confirmation
@@ -248,17 +258,44 @@ class App {
     try {
       const raw = localStorage.getItem(this.STORAGE_KEY);
       if (!raw) return false;
-      
+
       const data = JSON.parse(raw);
-      if (!Array.isArray(data) || data.length === 0) return false;
-      
+
+      // Migration: old format was an array of per-scale objects
+      if (Array.isArray(data)) {
+        if (data.length === 0) return false;
+        // Read limits from first scale's old property names
+        const first = data[0];
+        if (first.whiteLimit != null) this.manager.lightnessMax = first.whiteLimit;
+        if (first.blackLimit != null) this.manager.lightnessMin = first.blackLimit;
+        if (first.darkWhiteLimit != null) this.manager.darkLightnessMax = first.darkWhiteLimit;
+        if (first.darkBlackLimit != null) this.manager.darkLightnessMin = first.darkBlackLimit;
+        this.manager.scales = [];
+        data.forEach(item => {
+          this.manager.addScale(item.name, item.keyColors);
+        });
+        return true;
+      }
+
+      // New format: object with scales array and top-level limits
+      if (!data.scales || data.scales.length === 0) return false;
+
+      // Read limits (try new names first, fall back to old names)
+      if (data.lightnessMax != null) this.manager.lightnessMax = data.lightnessMax;
+      else if (data.whiteLimit != null) this.manager.lightnessMax = data.whiteLimit;
+
+      if (data.lightnessMin != null) this.manager.lightnessMin = data.lightnessMin;
+      else if (data.blackLimit != null) this.manager.lightnessMin = data.blackLimit;
+
+      if (data.darkLightnessMax != null) this.manager.darkLightnessMax = data.darkLightnessMax;
+      else if (data.darkWhiteLimit != null) this.manager.darkLightnessMax = data.darkWhiteLimit;
+
+      if (data.darkLightnessMin != null) this.manager.darkLightnessMin = data.darkLightnessMin;
+      else if (data.darkBlackLimit != null) this.manager.darkLightnessMin = data.darkBlackLimit;
+
       this.manager.scales = [];
-      data.forEach(item => {
-        const scale = this.manager.addScale(item.name, item.keyColors);
-        if (item.whiteLimit != null) scale.setWhiteLimit(item.whiteLimit);
-        if (item.blackLimit != null) scale.setBlackLimit(item.blackLimit);
-        if (item.darkWhiteLimit != null) scale.setDarkWhiteLimit(item.darkWhiteLimit);
-        if (item.darkBlackLimit != null) scale.setDarkBlackLimit(item.darkBlackLimit);
+      data.scales.forEach(item => {
+        this.manager.addScale(item.name, item.keyColors);
       });
       return true;
     } catch (e) {
@@ -392,8 +429,8 @@ class App {
     steps.forEach(s => { stepMap[s.label] = s.hex; });
     
     root.style.setProperty('--bg', stepMap[0] || (isDark ? '#0f0e0d' : '#ffffff'));
-    root.style.setProperty('--bg-subtle', stepMap[50] || stepMap[0]);
-    root.style.setProperty('--bg-muted', stepMap[100] || stepMap[50]);
+    root.style.setProperty('--bg-subtle', stepMap[20] || stepMap[0]);
+    root.style.setProperty('--bg-muted', stepMap[60] || stepMap[50]);
     root.style.setProperty('--bg-alt', stepMap[50] || stepMap[0]);
     root.style.setProperty('--border', stepMap[200] || stepMap[150]);
     root.style.setProperty('--border-strong', stepMap[300] || stepMap[250]);
@@ -535,41 +572,43 @@ class App {
     // Close any other popovers
     document.querySelectorAll('.settings-popover').forEach(p => p.remove());
     
-    // Get current values from first scale (they're all the same)
-    const refScale = this.manager.scales[0];
-    const whiteLimit = refScale ? refScale.whiteLimit : 1.0;
-    const blackLimit = refScale ? refScale.blackLimit : 0.15;
-    
-    const darkWhiteLimit = refScale ? refScale.darkWhiteLimit : 0.95;
-    const darkBlackLimit = refScale ? refScale.darkBlackLimit : 0.15;
+    // Read current values from manager (global limits)
+    const whiteLimit = this.manager.lightnessMax;
+    const blackLimit = this.manager.lightnessMin;
+    const darkWhiteLimit = this.manager.darkLightnessMax;
+    const darkBlackLimit = this.manager.darkLightnessMin;
     
     const popover = document.createElement('div');
     popover.className = 'settings-popover';
     popover.innerHTML = `
-      <div class="settings-popover-header">Light Mode</div>
-      <div class="settings-popover-body">
-        <div class="settings-row">
-          <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
-          <input type="number" class="control-input" id="settings-white-limit" 
-            value="${whiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
-        </div>
-        <div class="settings-row">
-          <label class="settings-label">Darkest point <span class="settings-hint">(step 900)</span></label>
-          <input type="number" class="control-input" id="settings-black-limit" 
-            value="${blackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
+      <div class="settings-section">
+        <div class="settings-popover-header">Light Mode</div>
+        <div class="settings-popover-body">
+          <div class="settings-row">
+            <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
+            <input type="number" class="control-input" id="settings-white-limit"
+              value="${whiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">Darkest point <span class="settings-hint">(step 900)</span></label>
+            <input type="number" class="control-input" id="settings-black-limit"
+              value="${blackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
+          </div>
         </div>
       </div>
-      <div class="settings-popover-header">Dark Mode</div>
-      <div class="settings-popover-body">
-        <div class="settings-row">
-          <label class="settings-label">Darkest point <span class="settings-hint">(step 0)</span></label>
-          <input type="number" class="control-input" id="settings-dark-black-limit" 
-            value="${darkBlackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
-        </div>
-        <div class="settings-row">
-          <label class="settings-label">Lightest point <span class="settings-hint">(step 900)</span></label>
-          <input type="number" class="control-input" id="settings-dark-white-limit" 
-            value="${darkWhiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
+      <div class="settings-section">
+        <div class="settings-popover-header">Dark Mode</div>
+        <div class="settings-popover-body">
+          <div class="settings-row">
+            <label class="settings-label">Darkest point <span class="settings-hint">(step 0)</span></label>
+            <input type="number" class="control-input" id="settings-dark-black-limit"
+              value="${darkBlackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
+          </div>
+          <div class="settings-row">
+            <label class="settings-label">Lightest point <span class="settings-hint">(step 900)</span></label>
+            <input type="number" class="control-input" id="settings-dark-white-limit"
+              value="${darkWhiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
+          </div>
         </div>
       </div>
     `;
@@ -578,54 +617,47 @@ class App {
     // Bind change handlers
     popover.querySelector('#settings-white-limit').addEventListener('change', (e) => {
       this._pushUndo();
-      const val = parseFloat(e.target.value);
-      this.manager.scales.forEach(s => s.setWhiteLimit(val));
-      // Update curve editor if open
+      this.manager.setLightnessMax(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
-        this.curveEditor.setPoints('L', selected.curvePoints.L);
+        this._setCurveEditorLReference();
         this._updateConstraintBounds(selected);
-
       }
       this._render();
       this._scheduleGradientResize();
     });
-    
+
     popover.querySelector('#settings-black-limit').addEventListener('change', (e) => {
       this._pushUndo();
-      const val = parseFloat(e.target.value);
-      this.manager.scales.forEach(s => s.setBlackLimit(val));
+      this.manager.setLightnessMin(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
-        this.curveEditor.setPoints('L', selected.curvePoints.L);
+        this._setCurveEditorLReference();
         this._updateConstraintBounds(selected);
-
       }
       this._render();
       this._scheduleGradientResize();
     });
-    
+
     // Dark mode limit handlers
     popover.querySelector('#settings-dark-black-limit').addEventListener('change', (e) => {
       this._pushUndo();
-      const val = parseFloat(e.target.value);
-      this.manager.scales.forEach(s => s.setDarkBlackLimit(val));
+      this.manager.setDarkLightnessMin(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
-        this.curveEditor.setPoints('L', selected.curvePoints.L);
+        this._setCurveEditorLReference();
         this._updateConstraintBounds(selected);
       }
       this._render();
       this._scheduleGradientResize();
     });
-    
+
     popover.querySelector('#settings-dark-white-limit').addEventListener('change', (e) => {
       this._pushUndo();
-      const val = parseFloat(e.target.value);
-      this.manager.scales.forEach(s => s.setDarkWhiteLimit(val));
+      this.manager.setDarkLightnessMax(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
-        this.curveEditor.setPoints('L', selected.curvePoints.L);
+        this._setCurveEditorLReference();
         this._updateConstraintBounds(selected);
       }
       this._render();
@@ -1227,69 +1259,67 @@ class App {
 
   _attachContrastHover(col, swatchList, scale) {
     const rows = swatchList.querySelectorAll('.swatch-row');
-    
+
     const clearHighlights = () => {
       col.classList.remove('contrast-hover');
       rows.forEach(r => {
-        r.classList.remove('hover-source', 'contrast-a', 'contrast-aa', 'contrast-aaa');
+        r.classList.remove('hover-source', 'contrast-a', 'contrast-aa', 'contrast-aaa', 'contrast-none');
         const badge = r.querySelector('.contrast-ratio-badge');
         if (badge) badge.remove();
         const zoneLabel = r.querySelector('.contrast-zone-label');
         if (zoneLabel) zoneLabel.remove();
       });
     };
-    
+
     rows.forEach(sourceRow => {
       sourceRow.addEventListener('mouseenter', () => {
         clearHighlights();
-        
+
         const sourceLabel = parseInt(sourceRow.dataset.label);
         const sourceHex = sourceRow.dataset.hex;
-        
+
         col.classList.add('contrast-hover');
         sourceRow.classList.add('hover-source');
-        
-        // Track zone boundaries to add zone labels
-        let firstA = null, firstAup = null;     // A: 3:1 (gap 450-549)
-        let firstAA = null, firstAAup = null;   // AA: 4.5:1 (gap 550-649)
-        let firstAAA = null, firstAAAup = null; // AAA: 7:1 (gap ≥650)
-        
+
+        // Track zone boundaries for labels
+        let firstA = null, firstAup = null;
+        let firstAA = null, firstAAup = null;
+        let firstAAA = null, firstAAAup = null;
+
         rows.forEach(targetRow => {
           if (targetRow === sourceRow) return;
-          
+
           const targetLabel = parseInt(targetRow.dataset.label);
           const targetHex = targetRow.dataset.hex;
           const gap = Math.abs(targetLabel - sourceLabel);
-          
-          if (gap < 450) return; // no constraint
-          
-          // Compute actual contrast ratio
           const ratio = this._computeContrastFromHex(sourceHex, targetHex);
           const isAbove = targetLabel < sourceLabel;
-          
-          // Determine tier (highest applicable)
+
+          // Determine tier from gap
           let tierClass;
-          if (gap >= 650) {
+          if (gap >= 600) {
             tierClass = 'contrast-aaa';
             if (!isAbove && (!firstAAA || targetLabel < parseInt(firstAAA.dataset.label))) firstAAA = targetRow;
             if (isAbove && (!firstAAAup || targetLabel > parseInt(firstAAAup.dataset.label))) firstAAAup = targetRow;
-          } else if (gap >= 550) {
+          } else if (gap >= 500) {
             tierClass = 'contrast-aa';
             if (!isAbove && (!firstAA || targetLabel < parseInt(firstAA.dataset.label))) firstAA = targetRow;
             if (isAbove && (!firstAAup || targetLabel > parseInt(firstAAup.dataset.label))) firstAAup = targetRow;
-          } else {
+          } else if (gap >= 400) {
             tierClass = 'contrast-a';
             if (!isAbove && (!firstA || targetLabel < parseInt(firstA.dataset.label))) firstA = targetRow;
             if (isAbove && (!firstAup || targetLabel > parseInt(firstAup.dataset.label))) firstAup = targetRow;
+          } else {
+            tierClass = 'contrast-none';
           }
-          
+
           targetRow.classList.add(tierClass);
           const badge = document.createElement('span');
           badge.className = 'contrast-ratio-badge';
           badge.textContent = `${ratio.toFixed(1)}:1`;
           targetRow.appendChild(badge);
         });
-        
+
         // Add zone boundary labels at the first row of each zone
         const addZoneLabel = (row, text, cls) => {
           if (!row) return;
@@ -1298,14 +1328,13 @@ class App {
           label.textContent = text;
           row.appendChild(label);
         };
-        
+
         addZoneLabel(firstA || firstAup, 'A ≥3:1', 'zone-label-a');
         addZoneLabel(firstAA || firstAAup, 'AA ≥4.5:1', 'zone-label-aa');
         addZoneLabel(firstAAA || firstAAAup, 'AAA ≥7:1', 'zone-label-aaa');
       });
-      
+
       sourceRow.addEventListener('mouseleave', () => {
-        // Small delay so moving between rows doesn't flash
         setTimeout(() => {
           if (!col.querySelector('.swatch-row:hover')) {
             clearHighlights();
@@ -1313,7 +1342,7 @@ class App {
         }, 50);
       });
     });
-    
+
     // Clear when mouse leaves the entire swatch list
     swatchList.addEventListener('mouseleave', clearHighlights);
   }
@@ -1340,9 +1369,8 @@ class App {
     const isDark = this.viewMode === 'dark';
     for (let i = 0; i < steps; i++) {
       const t = i / steps;
-      const tL = isDark ? (1 - t) : t; // Reverse L sampling for dark mode
-      let L = ColorEngine.cubicHermiteInterpolate(scale.curvePoints.L, tL);
-      if (isDark) L = scale.darkRemapL(Math.max(0, Math.min(1, L)));
+      const step = t * 900;
+      let L = isDark ? this.manager.getDarkLinearL(step) : this.manager.getLinearL(step);
       const C = ColorEngine.cubicHermiteInterpolate(scale.curvePoints.C, t);
       const H = ColorEngine.interpolateHue(scale.curvePoints.H, t);
       
@@ -1426,14 +1454,17 @@ class App {
         this._pushUndo();
         this._curveUndoPushed = true;
       }
-      selected.curvePoints = points;
+      // Only C and H come from the editor; L is fixed
+      selected.curvePoints.C = points.C;
+      selected.curvePoints.H = points.H;
       selected.generate();
       this._updateConstraintBounds(selected);
       this._updateSwatches(selected);
     });
     canvasContainer.addEventListener('mouseup', () => { this._curveUndoPushed = false; });
-    
-    this.curveEditor.setPoints('L', selected.curvePoints.L);
+
+    // Set L as non-interactive reference line (linear schedule)
+    this._setCurveEditorLReference();
     this.curveEditor.setPoints('C', selected.curvePoints.C);
     this.curveEditor.setPoints('H', selected.curvePoints.H);
     
@@ -1456,6 +1487,15 @@ class App {
     panel.addEventListener('animationend', () => {
       panel.remove();
     }, { once: true });
+  }
+
+  _setCurveEditorLReference() {
+    if (!this.curveEditor) return;
+    // Set L as a two-point linear reference line
+    this.curveEditor.setPoints('L', [
+      { x: 0, y: this.manager.lightnessMax },
+      { x: 1, y: this.manager.lightnessMin }
+    ]);
   }
 
   _updateConstraintBounds(scale) {
@@ -1487,22 +1527,22 @@ class App {
     section.appendChild(statusDiv);
     
     // Constraint pairs by tier
-    const constrainedA = validation.constrained.filter(v => v.gap >= 450 && v.gap < 550);
-    const constrainedAA = validation.constrained.filter(v => v.gap >= 550 && v.gap < 650);
-    const constrainedAAA = validation.constrained.filter(v => v.gap >= 650);
-    
+    const constrainedA = validation.constrained.filter(v => v.gap >= 400 && v.gap < 500);
+    const constrainedAA = validation.constrained.filter(v => v.gap >= 500 && v.gap < 600);
+    const constrainedAAA = validation.constrained.filter(v => v.gap >= 600);
+
     if (constrainedAAA.length > 0) {
-      const detailsAAA = this._createConstraintGroup('AAA 7:1 pairs (≥650 gap)', constrainedAAA);
+      const detailsAAA = this._createConstraintGroup('AAA 7:1 pairs (≥600 gap)', constrainedAAA);
       section.appendChild(detailsAAA);
     }
-    
+
     if (constrainedAA.length > 0) {
-      const detailsAA = this._createConstraintGroup('AA 4.5:1 pairs (≥550 gap)', constrainedAA);
+      const detailsAA = this._createConstraintGroup('AA 4.5:1 pairs (≥500 gap)', constrainedAA);
       section.appendChild(detailsAA);
     }
-    
+
     if (constrainedA.length > 0) {
-      const detailsA = this._createConstraintGroup('A 3:1 pairs (450–549 gap)', constrainedA);
+      const detailsA = this._createConstraintGroup('A 3:1 pairs (400–499 gap)', constrainedA);
       section.appendChild(detailsA);
     }
     
