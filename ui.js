@@ -4,7 +4,6 @@
 class App {
   constructor() {
     this.manager = new ScaleManager();
-    this.undoManager = new UndoManager();
     this.curveEditor = null;
     this.viewMode = 'light';
     this.root = document.getElementById('app');
@@ -33,75 +32,11 @@ class App {
     this.manager.selectedId = null;
     
     this._initTooltipSystem();
-    this._initUndoKeyboard();
     this._render();
     this._scheduleGradientResize();
   }
 
-  _captureState() {
-    return {
-      lightnessMax: this.manager.lightnessMax,
-      lightnessMin: this.manager.lightnessMin,
-      darkLightnessMax: this.manager.darkLightnessMax,
-      darkLightnessMin: this.manager.darkLightnessMin,
-      scales: this.manager.scales.map(s => s.toConfig()),
-      selectedId: this.manager.selectedId,
-      viewMode: this.viewMode
-    };
-  }
 
-  _restoreState(snapshot) {
-    if (snapshot.lightnessMax != null) this.manager.lightnessMax = snapshot.lightnessMax;
-    if (snapshot.lightnessMin != null) this.manager.lightnessMin = snapshot.lightnessMin;
-    if (snapshot.darkLightnessMax != null) this.manager.darkLightnessMax = snapshot.darkLightnessMax;
-    if (snapshot.darkLightnessMin != null) this.manager.darkLightnessMin = snapshot.darkLightnessMin;
-    this.manager.scales = snapshot.scales.map(c => Scale.fromConfig(c, this.manager));
-    this.manager.selectedId = snapshot.selectedId;
-    this.viewMode = snapshot.viewMode;
-    document.body.classList.toggle('dark-mode', this.viewMode === 'dark');
-    this._render();
-    this._scheduleGradientResize();
-  }
-
-  _pushUndo() {
-    this.undoManager.snapshot(this._captureState());
-    this._updateUndoButtons();
-  }
-
-  _undo() {
-    const prev = this.undoManager.undo(this._captureState());
-    if (prev) {
-      this._restoreState(prev);
-      this._updateUndoButtons();
-    }
-  }
-
-  _redo() {
-    const next = this.undoManager.redo(this._captureState());
-    if (next) {
-      this._restoreState(next);
-      this._updateUndoButtons();
-    }
-  }
-
-  _updateUndoButtons() {
-    const undoBtn = document.getElementById('btn-undo');
-    const redoBtn = document.getElementById('btn-redo');
-    if (undoBtn) undoBtn.disabled = !this.undoManager.canUndo();
-    if (redoBtn) redoBtn.disabled = !this.undoManager.canRedo();
-  }
-
-  _initUndoKeyboard() {
-    document.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        this._undo();
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
-        e.preventDefault();
-        this._redo();
-      }
-    });
-  }
 
   _initTooltipSystem() {
     // Create shared popover tooltip element (lives in top layer, escapes overflow:hidden)
@@ -478,12 +413,6 @@ class App {
             ${icon('gear',16)}
           </button>
         </div>
-        <button class="btn btn-secondary btn-icon-only" id="btn-undo" data-tooltip="Undo" disabled>
-          ${icon('arrow-counter-clockwise',16)}
-        </button>
-        <button class="btn btn-secondary btn-icon-only" id="btn-redo" data-tooltip="Redo" disabled>
-          ${icon('arrow-clockwise',16)}
-        </button>
         <button class="btn btn-secondary btn-icon-only" id="btn-save" data-tooltip="Save">
           ${icon('floppy-disk',16)}
         </button>
@@ -541,12 +470,12 @@ class App {
         clearTimeout(this._themeTransitionTimer);
         this._themeTransitionTimer = setTimeout(() => {
           document.documentElement.classList.remove('theme-transitioning');
-        }, 250);
+        }, 150);
       });
     });
 
     header.querySelector('#btn-add-scale').addEventListener('click', () => {
-      this._pushUndo();
+
       const colors = ['#8B5CF6', '#D97757', '#06B6D4', '#EC4899', '#84CC16', '#F59E0B'];
       const names = ['Custom', 'Clay', 'Teal', 'Pink', 'Lime', 'Amber'];
       const idx = this.manager.scales.length % colors.length;
@@ -554,8 +483,6 @@ class App {
       this._render();
     });
     
-    header.querySelector('#btn-undo').addEventListener('click', () => this._undo());
-    header.querySelector('#btn-redo').addEventListener('click', () => this._redo());
     header.querySelector('#btn-settings').addEventListener('click', (e) => {
       e.stopPropagation();
       this._toggleSettingsPopover(header.querySelector('.settings-wrap'));
@@ -616,7 +543,7 @@ class App {
     
     // Bind change handlers
     popover.querySelector('#settings-white-limit').addEventListener('change', (e) => {
-      this._pushUndo();
+
       this.manager.setLightnessMax(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
@@ -628,7 +555,7 @@ class App {
     });
 
     popover.querySelector('#settings-black-limit').addEventListener('change', (e) => {
-      this._pushUndo();
+
       this.manager.setLightnessMin(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
@@ -641,7 +568,7 @@ class App {
 
     // Dark mode limit handlers
     popover.querySelector('#settings-dark-black-limit').addEventListener('change', (e) => {
-      this._pushUndo();
+
       this.manager.setDarkLightnessMin(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
@@ -653,7 +580,7 @@ class App {
     });
 
     popover.querySelector('#settings-dark-white-limit').addEventListener('change', (e) => {
-      this._pushUndo();
+
       this.manager.setDarkLightnessMax(parseFloat(e.target.value));
       const selected = this.manager.getSelected();
       if (selected && this.curveEditor) {
@@ -716,7 +643,7 @@ class App {
     nameInput.className = 'scale-name-input';
     nameInput.value = scale.name;
     nameInput.addEventListener('change', (e) => {
-      this._pushUndo();
+
       scale.name = e.target.value;
       const panelName = document.querySelector('.curve-scale-name');
       if (panelName) panelName.textContent = scale.name;
@@ -928,7 +855,7 @@ class App {
         icon: icon('copy',16),
         action: () => {
           dropdown.remove();
-          this._pushUndo();
+    
           const prevSelected = this.manager.selectedId;
           this.manager.duplicateScale(scale.id);
           // Don't open curve editor for the new scale
@@ -944,7 +871,7 @@ class App {
         disabled: this.manager.scales.length <= 1,
         action: () => {
           dropdown.remove();
-          this._pushUndo();
+    
           this.manager.removeScale(scale.id);
           this._render();
           this._scheduleGradientResize();
@@ -1055,7 +982,7 @@ class App {
     addColorBtn.innerHTML = icon('plus',14) + ' Add color';
     addColorBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      this._pushUndo();
+
       scale.addKeyColor('#D97757');
       this._render();
     });
@@ -1087,7 +1014,7 @@ class App {
       nativeInput.value = hex;
       nativeInput.addEventListener('input', (e) => {
         if (!this._colorPickerUndoPushed) {
-          this._pushUndo();
+    
           this._colorPickerUndoPushed = true;
         }
         scale.updateKeyColor(idx, e.target.value);
@@ -1106,7 +1033,7 @@ class App {
         let val = e.target.value.trim();
         if (!val.startsWith('#')) val = '#' + val;
         if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-          this._pushUndo();
+    
           scale.updateKeyColor(idx, val.toLowerCase());
           this._render();
         }
@@ -1121,7 +1048,7 @@ class App {
         removeBtn.innerHTML = icon('minus',12);
         removeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          this._pushUndo();
+    
           scale.removeKeyColor(idx);
           this._render();
         });
@@ -1245,7 +1172,7 @@ class App {
       if (draggedIndex < targetIndex) targetIndex--;
       
       if (draggedIndex !== targetIndex) {
-        this._pushUndo();
+  
         this.manager.moveScale(dragScaleId, targetIndex);
         this._render();
       }
@@ -1428,21 +1355,25 @@ class App {
     `;
     panel.appendChild(panelHeader);
     
-    const help = document.createElement('div');
-    help.className = 'curve-help';
-    help.textContent = 'Click curve to add point · Drag to adjust · Right-click/dbl-click to remove · Red zones = contrast constraint limits';
-    panel.appendChild(help);
-    
     const panelContent = document.createElement('div');
     panelContent.className = 'curve-panel-content';
-    
+
     const canvasContainer = document.createElement('div');
     canvasContainer.className = 'curve-canvas-container';
     panelContent.appendChild(canvasContainer);
-    
+
+    const sidebarWrap = document.createElement('div');
+    sidebarWrap.className = 'curve-sidebar-wrap';
     const validationSidebar = this._createContrastValidation(selected);
-    panelContent.appendChild(validationSidebar);
-    
+    sidebarWrap.appendChild(validationSidebar);
+
+    const help = document.createElement('div');
+    help.className = 'curve-help';
+    help.textContent = 'Click curve to add point · Drag to adjust · Right-click/dbl-click to remove · Red zones = contrast constraint limits';
+    sidebarWrap.appendChild(help);
+
+    panelContent.appendChild(sidebarWrap);
+
     panel.appendChild(panelContent);
     this.root.appendChild(panel);
     
@@ -1451,7 +1382,7 @@ class App {
     this._curveUndoPushed = false;
     this.curveEditor = new CurveEditor(canvasContainer, (points) => {
       if (!this._curveUndoPushed) {
-        this._pushUndo();
+  
         this._curveUndoPushed = true;
       }
       // Only C and H come from the editor; L is fixed

@@ -48,7 +48,6 @@ Requires Node 18+ (uses built-in `node:test` runner).
 | `scale-manager.js` | Scale generation with contrast constraint enforcement |
 | `figma-push.js` | Figma Variables REST API integration |
 | `ui.js` | UI controller — renders all views and manages state |
-| `undo-manager.js` | Snapshot-based undo/redo system |
 
 ## Design Specification
 

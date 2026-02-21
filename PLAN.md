@@ -1,7 +1,7 @@
 # ChromaScale Improvements Plan
 
 ## Context
-ChromaScale is a fully functional vanilla JS color scale tool. This plan addresses five improvements identified during codebase review: adding unit tests, splitting the README, adding browser fallbacks for cutting-edge CSS APIs, and implementing full undo/redo. Build system and ES module conversion were evaluated and deliberately skipped — the zero-config `file://` simplicity is kept.
+ChromaScale is a fully functional vanilla JS color scale tool. This plan addresses improvements identified during codebase review: adding unit tests, splitting the README, and adding browser fallbacks for cutting-edge CSS APIs. Build system and ES module conversion were evaluated and deliberately skipped — the zero-config `file://` simplicity is kept.
 
 ---
 
@@ -173,101 +173,19 @@ All three modern browsers (Chrome 114+, Firefox 125+, Safari 17+) have supported
 
 ---
 
-## 4. Undo/Redo System
-
-**Problem:** No way to undo curve edits, color changes, scale additions/deletions, name changes, or settings changes.
-
-### Design: Snapshot-based undo stack
-
-**Why snapshots over commands:** The state is small (scale configs, not generated steps — those are derived). A full snapshot of all scales' config data is ~2-5KB. This is simpler and more reliable than a command pattern, with no risk of command replay bugs.
-
-### State to capture (per snapshot)
-```js
-{
-  scales: [{
-    name, keyColors, whiteLimit, blackLimit,
-    darkWhiteLimit, darkBlackLimit,
-    curvePoints: { L: [...], C: [...], H: [...] }
-  }],
-  selectedId: string | null,
-  viewMode: 'light' | 'dark'
-}
-```
-
-### Implementation
-
-**New file: `undo-manager.js`**
-- `UndoManager` class with:
-  - `_undoStack: []` — array of serialized state snapshots
-  - `_redoStack: []` — cleared on any new action
-  - `_maxHistory: 100` — cap to prevent memory bloat
-  - `snapshot(state)` — push current state before a mutation
-  - `undo()` → returns previous state (or null)
-  - `redo()` → returns next state (or null)
-  - `canUndo()` / `canRedo()` — for button state
-
-**Modifications to `ui.js` (App class):**
-- Add `this.undoManager = new UndoManager()` in constructor
-- Add `_captureState()` method — serializes current manager state
-- Add `_restoreState(snapshot)` method — rebuilds scales from snapshot, re-renders
-- Add `_pushUndo()` — called before every mutation (wraps `_captureState` + `undoManager.snapshot`)
-- Call `_pushUndo()` before: curve point changes, source color edits, scale add/remove/duplicate/reorder, name changes, white/black limit changes
-- Add keyboard shortcuts: `Cmd+Z` (undo), `Cmd+Shift+Z` (redo)
-- Add undo/redo buttons to header (using existing `arrow-counter-clockwise` icon + a new mirrored version)
-
-**Modifications to `scale-manager.js`:**
-- Add `Scale.toConfig()` method — returns plain object (name, keyColors, limits, curvePoints)
-- Add `Scale.fromConfig(config)` static method — reconstructs a Scale from config object
-- Add `ScaleManager.toConfig()` / `ScaleManager.fromConfig()` for full state serialization
-
-**Modifications to `index.html`:**
-- Add `<script src="undo-manager.js"></script>` before `ui.js`
-
-**Modifications to `icons.js`:**
-- Add `redo` icon (mirrored `arrow-counter-clockwise`)
-
-### Undo trigger points in ui.js
-Every place that mutates state needs a `_pushUndo()` call before the mutation:
-- `_onCurveChange()` — curve point drag/add/remove (debounced: capture on mousedown, not every mousemove)
-- Source panel: add/remove/update key color
-- Scale name change (on blur)
-- Add scale, duplicate scale, delete scale
-- Reorder scales (drag drop)
-- Settings changes (white/black limits, dark limits)
-
-### Keyboard shortcuts
-- Add a `keydown` listener on `document` in the App constructor
-- `Cmd+Z` / `Ctrl+Z` → undo
-- `Cmd+Shift+Z` / `Ctrl+Shift+Z` → redo
-
----
-
-## 5. New file: `tests/undo-manager.test.js`
-- Snapshot push/pop
-- Redo stack clears on new action
-- Max history cap
-- Can't undo past beginning / redo past end
-
----
-
 ## Execution Order
 
 1. **Tests infrastructure + color-engine tests** — add conditional exports, write `tests/color-engine.test.js`, verify with `node --test`
 2. **Scale manager tests** — write `tests/scale-manager.test.js`
 3. **README split** — rename to DESIGN.md, write new README.md
 4. **Browser fallbacks** — feature detection in tooltip system
-5. **Undo/redo** — new `undo-manager.js`, integrate into `ui.js`, add keyboard shortcuts, add undo-manager tests
 
-Steps 1-3 are independent and can be parallelized. Step 4 is independent. Step 5 is the largest piece.
+Steps 1-3 are independent and can be parallelized. Step 4 is independent.
 
 ---
 
 ## Verification
 
 - `node --test tests/` — all tests pass
-- Open `index.html` in Chrome — app works as before, undo/redo with Cmd+Z/Cmd+Shift+Z
+- Open `index.html` in Chrome — app works as before
 - Open `index.html` in Firefox/Safari — tooltips work via fallback positioning
-- Edit a curve, undo → curve reverts. Redo → curve restores.
-- Add a scale, undo → scale removed. Delete a scale, undo → scale restored.
-- Change settings, undo → settings revert.
-- Verify localStorage save still works after undo/redo

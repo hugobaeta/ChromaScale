@@ -20,7 +20,6 @@
 - Interactive Catmull-Rom curve editor for L/C/H
 - Light and dark mode with animated transitions
 - Export: CSS custom properties, JSON, W3C Design Tokens, Figma API push
-- Unit tests (node:test) for color-engine, scale-manager, undo-manager
-- Snapshot-based undo/redo (Cmd+Z / Cmd+Shift+Z)
+- Unit tests (node:test) for color-engine, scale-manager
 - CSS Anchor Positioning tooltip fallback for older browsers
 - Self-theming UI using first scale's colors
