@@ -40,21 +40,21 @@
 /* Theme transition — only active during mode switch, removed after to prevent flash on page load */
 :root.theme-transitioning {
   transition:
-    --bg 0.18s ease,
-    --bg-subtle 0.18s ease,
-    --bg-muted 0.18s ease,
-    --bg-alt 0.18s ease,
-    --hover 0.18s ease,
-    --border 0.18s ease,
-    --border-strong 0.18s ease,
-    --border-hover 0.18s ease,
-    --text 0.18s ease,
-    --text-secondary 0.18s ease,
-    --text-muted 0.18s ease,
-    --text-muted-strong 0.18s ease,
-    --accent 0.18s ease,
-    --accent-fg 0.18s ease,
-    --outline-active 0.18s ease;
+    --bg 0.1s ease,
+    --bg-subtle 0.1s ease,
+    --bg-muted 0.1s ease,
+    --bg-alt 0.1s ease,
+    --hover 0.1s ease,
+    --border 0.1s ease,
+    --border-strong 0.1s ease,
+    --border-hover 0.1s ease,
+    --text 0.1s ease,
+    --text-secondary 0.1s ease,
+    --text-muted 0.1s ease,
+    --text-muted-strong 0.1s ease,
+    --accent 0.1s ease,
+    --accent-fg 0.1s ease,
+    --outline-active 0.1s ease;
 }
 
 :root {
@@ -1189,7 +1189,7 @@ body.dark-mode .contrast-aaa .contrast-ratio-badge {
   padding: 10px 20px 14px;
   background: var(--bg-subtle);
   flex-shrink: 0;
-  max-height: 44vh;
+  max-height: 60vh;
   overflow-y: auto;
   /* Slide animation */
   animation: curveSlideUp 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
@@ -1200,10 +1200,10 @@ body.dark-mode .contrast-aaa .contrast-ratio-badge {
 }
 @keyframes curveSlideUp {
   from { opacity: 0; transform: translateY(16px); max-height: 0; padding-top: 0; padding-bottom: 0; }
-  to   { opacity: 1; transform: translateY(0);    max-height: 44vh; padding-top: 10px; padding-bottom: 14px; }
+  to   { opacity: 1; transform: translateY(0);    max-height: 60vh; padding-top: 10px; padding-bottom: 14px; }
 }
 @keyframes curveSlideDown {
-  from { opacity: 1; transform: translateY(0);    max-height: 44vh; padding-top: 10px; padding-bottom: 14px; }
+  from { opacity: 1; transform: translateY(0);    max-height: 60vh; padding-top: 10px; padding-bottom: 14px; }
   to   { opacity: 0; transform: translateY(16px); max-height: 0; padding-top: 0; padding-bottom: 0; }
 }
 
@@ -1241,10 +1241,18 @@ body.dark-mode .contrast-aaa .contrast-ratio-badge {
 }
 .control-input:focus { border-color: var(--accent); }
 
+.curve-sidebar-wrap {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  max-width: 240px;
+}
+
 .curve-help {
   font-size: 10px;
   color: var(--text-muted);
-  margin-bottom: 8px;
+  margin-top: 8px;
+  text-align: left;
 }
 
 .curve-panel-content {
@@ -1255,18 +1263,36 @@ body.dark-mode .contrast-aaa .contrast-ratio-badge {
 .curve-canvas-container {
   flex: 1;
   min-width: 0;
+  position: relative;
 }
 .curve-canvas {
   background: var(--bg-subtle);
   border: 1px solid var(--border);
 }
+.curve-point-input {
+  position: absolute;
+  width: 56px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  z-index: 10;
+}
+.curve-point-input:focus { border-color: var(--accent); }
 
 /* === Validation Sidebar === */
 .validation-section {
   width: 200px;
   flex-shrink: 0;
   overflow-y: auto;
-  max-height: 240px;
+  max-height: 380px;
 }
 
 .constraint-status {

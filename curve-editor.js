@@ -9,7 +9,8 @@ class CurveEditor {
     this.ctx = null;
     this.dpr = window.devicePixelRatio || 1;
 
-    this.padding = { top: 20, right: 24, bottom: 32, left: 44 };
+    this.gradientH = 100;
+    this.padding = { top: 20 + 100 + 8, right: 24, bottom: 32, left: 44 };
     this.width = 0;
     this.height = 0;
 
@@ -35,7 +36,7 @@ class CurveEditor {
 
   _setupCanvas() {
     this.canvas.style.width = '100%';
-    this.canvas.style.height = '220px';
+    this.canvas.style.height = '528px';
     this.canvas.style.cursor = 'crosshair';
     this.canvas.style.borderRadius = '6px';
     this.canvas.className = 'curve-canvas';
@@ -146,9 +147,9 @@ class CurveEditor {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
+    this._drawGradientBackground(ctx);
     this._drawGrid(ctx);
     this._drawConstraintBands(ctx);
-    this._drawGradientStrip(ctx);
 
     // Draw L first (behind interactive curves), then C and H
     this._drawCurve(ctx, 'L');
@@ -262,11 +263,11 @@ class CurveEditor {
     ctx.fill();
   }
 
-  _drawGradientStrip(ctx) {
+  _drawGradientBackground(ctx) {
     const p = this.padding;
     const w = this.width - p.left - p.right;
-    const stripH = 6;
-    const y = this.height - p.bottom + 18;
+    const gH = this.gradientH;
+    const gY = 20; // original top padding before gradient space
 
     const steps = 100;
     const stepW = w / steps;
@@ -283,13 +284,14 @@ class CurveEditor {
       );
       const hex = ColorEngine.oklchToHex(clamped.L, clamped.C, clamped.H);
       ctx.fillStyle = hex;
-      ctx.fillRect(p.left + i * stepW, y, stepW + 1, stripH);
+      ctx.fillRect(p.left + i * stepW, gY, stepW + 1, gH);
     }
 
+    // Border around gradient strip
     const theme = this._getThemeColors();
     ctx.strokeStyle = theme.border;
     ctx.lineWidth = 1;
-    ctx.strokeRect(p.left, y, w, stripH);
+    ctx.strokeRect(p.left, gY, w, gH);
   }
 
   _drawCurve(ctx, channel) {
@@ -324,6 +326,18 @@ class CurveEditor {
     ctx.stroke();
     ctx.globalAlpha = 1;
     if (isReference) ctx.setLineDash([]);
+
+    // Draw curve label at right edge
+    const endVal = this.getValue(channel, 1);
+    const endNorm = this._normalize(channel, endVal);
+    const { py: labelY } = this._toPixel(1, Math.max(0, Math.min(1, endNorm)));
+    ctx.fillStyle = ch.color;
+    ctx.globalAlpha = isReference ? 0.4 : 0.85;
+    ctx.font = '10px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+    ctx.textAlign = 'left';
+    const p = this.padding;
+    ctx.fillText(channel, this.width - p.right + 4, labelY + 3);
+    ctx.globalAlpha = 1;
   }
 
   _drawPoints(ctx, channel) {
@@ -471,7 +485,7 @@ class CurveEditor {
   _bindEvents() {
     this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
-    this.canvas.addEventListener('mouseup', () => this._onMouseUp());
+    this.canvas.addEventListener('mouseup', (e) => this._onMouseUp(e));
     this.canvas.addEventListener('mouseleave', () => this._onMouseLeave());
     this.canvas.addEventListener('dblclick', (e) => this._onDoubleClick(e));
     this.canvas.addEventListener('contextmenu', (e) => {
@@ -492,6 +506,7 @@ class CurveEditor {
       clearTimeout(this._highlightTimer);
     }
     const { px, py } = this._getMousePos(e);
+    this._mouseDownPos = { px, py };
     const nearest = this._findNearestPoint(px, py, 14);
 
     if (nearest) {
@@ -525,11 +540,12 @@ class CurveEditor {
       if (!this.dragging.fixX) {
         const prevX = this.dragging.index > 0 ? ch.points[this.dragging.index - 1].x + 0.005 : 0;
         const nextX = this.dragging.index < ch.points.length - 1 ? ch.points[this.dragging.index + 1].x - 0.005 : 1;
-        pt.x = Math.round(Math.max(prevX, Math.min(nextX, x)) * 100) / 100;
+        pt.x = Math.round(Math.max(prevX, Math.min(nextX, x)) * 1000) / 1000;
       }
 
       pt.y = this._denormalize(this.dragging.channel, yNorm);
-      pt.y = Math.round(Math.max(ch.min, Math.min(ch.max, pt.y)) * 100) / 100;
+      const yPrec = this.dragging.channel === 'H' ? 10 : 1000;
+      pt.y = Math.round(Math.max(ch.min, Math.min(ch.max, pt.y)) * yPrec) / yPrec;
 
       this.draw();
       this._notify();
@@ -548,8 +564,20 @@ class CurveEditor {
     }
   }
 
-  _onMouseUp() {
+  _onMouseUp(e) {
+    if (this.dragging && this._mouseDownPos) {
+      const { px, py } = this._getMousePos(e);
+      const dx = px - this._mouseDownPos.px;
+      const dy = py - this._mouseDownPos.py;
+      if (Math.sqrt(dx * dx + dy * dy) < 3) {
+        // Click without drag — show point editor
+        const ch = this.channels[this.dragging.channel];
+        const pt = ch.points[this.dragging.index];
+        this._showPointEditor(this.dragging.channel, this.dragging.index, pt);
+      }
+    }
     this.dragging = null;
+    this._mouseDownPos = null;
     this.canvas.style.cursor = 'crosshair';
   }
 
@@ -589,7 +617,46 @@ class CurveEditor {
     }
   }
 
+  _showPointEditor(channel, index, pt) {
+    // Remove any existing editor
+    if (this._pointInput) this._pointInput.remove();
+
+    const ch = this.channels[channel];
+    const norm = this._normalize(channel, pt.y);
+    const { px, py } = this._toPixel(pt.x, Math.max(0, Math.min(1, norm)));
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'curve-point-input';
+    input.value = channel === 'H' ? pt.y.toFixed(1) : pt.y.toFixed(3);
+    input.style.left = px + 'px';
+    input.style.top = py + 'px';
+
+    const commit = () => {
+      const val = parseFloat(input.value);
+      if (!isNaN(val)) {
+        pt.y = Math.max(ch.min, Math.min(ch.max, val));
+        this.draw();
+        this._notify();
+      }
+      input.remove();
+      this._pointInput = null;
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); input.remove(); this._pointInput = null; }
+    });
+    input.addEventListener('blur', commit);
+
+    this.container.appendChild(input);
+    this._pointInput = input;
+    input.select();
+    input.focus();
+  }
+
   destroy() {
+    if (this._pointInput) this._pointInput.remove();
     this.canvas.remove();
   }
 }
