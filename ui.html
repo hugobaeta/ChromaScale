@@ -6,535 +6,378 @@
   <title>ChromaScale — Design System</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    /* Style guide overrides — let pages scroll and add section styling */
-    html, body { height: auto; overflow: auto; }
+    html { scroll-behavior: smooth; }
     #app { display: none; }
 
-    .ds { max-width: 960px; margin: 0 auto; padding: 32px 24px 80px; }
-    .ds h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
-    .ds .ds-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 32px; }
-    .ds h2 {
-      font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-      color: var(--text-secondary); margin: 40px 0 16px; padding-bottom: 8px;
-      border-bottom: 2px solid var(--border);
+    /* Sidebar + content layout */
+    .ds-layout {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      max-inline-size: 1200px;
+      margin-inline: auto;
     }
-    .ds h3 { font-size: 13px; font-weight: 600; color: var(--text); margin: 20px 0 8px; }
-    .ds p, .ds .note { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6; }
+    .ds-sidebar {
+      position: sticky;
+      inset-block-start: 0;
+      align-self: start;
+      max-block-size: 100dvh;
+      overflow-y: auto;
+      padding-block: 32px; padding-inline: 24px 0;
+      scrollbar-width: thin;
+    }
+    .ds-sidebar nav { display: flex; flex-direction: column; gap: 1px; }
+    .ds-sidebar a {
+      font-size: 11px; line-height: 1.3; color: var(--text-muted); text-decoration: none;
+      padding-block: 4px; padding-inline: 12px; border-radius: 6px; transition: background 0.1s, color 0.1s;
+    }
+    .ds-sidebar a:hover { color: var(--text); background: var(--bg-muted); }
+    .ds-sidebar a.toc-group {
+      font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); padding-block: 12px 4px; padding-inline: 12px; margin-block-start: 4px; border-radius: 0;
+    }
+    .ds-sidebar a.toc-group:hover { color: var(--text); background: none; }
+    .ds-sidebar a.toc-group:first-child { margin-block-start: 0; padding-block-start: 4px; }
+
+    .ds { max-inline-size: 960px; padding-block: 32px 80px; padding-inline: 24px; }
+    .ds h1 { font-size: 20px; font-weight: 700; margin-block-end: 4px; }
+    .ds .ds-subtitle { font-size: 13px; color: var(--text-muted); margin-block-end: 32px; }
+    .ds h2 {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted); margin-block: 48px -12px; margin-inline: 0; scroll-margin-block-start: 24px;
+      position: sticky; inset-block-start: 0; z-index: 9999; padding-block: 32px 16px; padding-inline: 0;
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      background: linear-gradient(to bottom, color-mix(in srgb, var(--bg) 85%, transparent), color-mix(in srgb, var(--bg) 60%, transparent));
+      mask-image: linear-gradient(to bottom, #000 70%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+    }
+    .ds h2:first-of-type { margin-block-start: 0; }
+    .ds h3 {
+      font-size: 14px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--text-secondary); margin-block: 32px 16px; margin-inline: 0; padding-block-end: 8px;
+      border-block-end: 2px solid var(--border); scroll-margin-block-start: 24px;
+    }
+    .ds h2 + h3 { margin-block-start: 12px; }
+    .ds h4 { font-size: 13px; font-weight: 600; color: var(--text); margin-block: 20px 8px; margin-inline: 0; }
+    .ds p, .ds .note { font-size: 12px; color: var(--text-secondary); margin-block-end: 12px; line-height: 1.6; }
     .ds .note { font-style: italic; color: var(--text-muted); }
 
-    /* Layout helpers */
-    .ds-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 16px; }
+    .ds-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-block-end: 16px; }
     .ds-col { display: flex; flex-direction: column; gap: 8px; }
-    .ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .ds-grid-sm { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-bottom: 16px; }
-    .ds-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .ds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-block-end: 16px; }
+    .ds-grid-sm { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-block-end: 16px; }
+    .ds-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-block-end: 12px; }
 
-    /* Token table */
-    .token-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 16px; }
-    .token-table th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 6px 10px; border-bottom: 2px solid var(--border); }
-    .token-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-    .token-table code { font-family: var(--font-mono); font-size: 10px; background: var(--bg-muted); padding: 1px 5px; border-radius: 3px; }
-    .token-table .swatch-sm { display: inline-block; width: 16px; height: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border-alpha); vertical-align: middle; margin-right: 6px; }
+    .token-table { inline-size: 100%; border-collapse: collapse; font-size: 11px; margin-block-end: 16px; }
+    .token-table th { text-align: start; font-weight: 600; color: var(--text-secondary); padding-block: 6px; padding-inline: 10px; border-block-end: 2px solid var(--border); }
+    .token-table td { padding-block: 5px; padding-inline: 10px; border-block-end: 1px solid var(--border); vertical-align: middle; }
+    .token-table code { font-family: var(--font-mono); font-size: 10px; background: var(--bg-muted); padding-block: 1px; padding-inline: 5px; border-radius: 3px; }
+    .token-table .swatch-sm { display: inline-block; inline-size: 16px; block-size: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border-alpha); vertical-align: middle; margin-inline-end: 6px; }
     .token-table .font-preview { white-space: nowrap; }
 
-    /* Component demo boxes */
     .demo-box {
       background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius);
-      padding: 16px; margin-bottom: 12px;
+      padding: 16px; margin-block-end: 12px; isolation: isolate;
     }
-    .demo-box-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-    .demo-dark { background: #1a1918; color: #e8e6dc; border-color: #3d3d3a; }
-    .demo-dark code { background: rgba(255,255,255,0.08); color: #e8e6dc; }
+    .demo-box-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-block-end: 8px; }
 
-    /* Icon grid */
     .icon-card {
       display: flex; flex-direction: column; align-items: center; gap: 6px;
-      padding: 12px 8px; border: 1px solid var(--border); border-radius: var(--radius);
-      background: var(--bg); font-size: 10px; color: var(--text-muted);
-      transition: background 0.12s;
+      padding-block: 12px; padding-inline: 8px; border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg); font-size: 10px; color: var(--text-muted); transition: background 0.12s;
     }
     .icon-card:hover { background: var(--bg-muted); }
     .icon-card svg { color: var(--text); }
     .icon-card code { font-family: var(--font-mono); font-size: 9px; }
 
-    /* Class tag */
     .cls { font-family: var(--font-mono); font-size: 9px; background: var(--bg-muted); color: var(--text-secondary);
-      padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); white-space: nowrap; }
-
-    /* Step mapping table */
-    .step-map-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 16px; }
-    .step-map-table th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 5px 8px; border-bottom: 2px solid var(--border); }
-    .step-map-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
-    .step-map-table code { font-family: var(--font-mono); font-size: 10px; }
+      padding-block: 1px; padding-inline: 5px; border-radius: 3px; border: 1px solid var(--border); white-space: nowrap; }
   </style>
 </head>
 <body>
+<div class="ds-layout">
+<aside class="ds-sidebar">
+  <nav>
+    <a class="toc-group" href="#foundations">Foundations</a>
+    <a href="#tokens">Design Tokens</a>
+    <a href="#semantic-colors">Semantic Colors</a>
+    <a href="#typography">Typography</a>
+    <a href="#icons">Icons</a>
+    <a class="toc-group" href="#components">Components</a>
+    <a href="#buttons">Buttons</a>
+    <a href="#form-inputs">Form Inputs</a>
+    <a class="toc-group" href="#scale-ui">Scale UI</a>
+    <a href="#swatch-rows">Swatch Rows</a>
+    <a href="#contrast-hover">Contrast Hover</a>
+    <a href="#scale-menu">Scale Menu</a>
+    <a class="toc-group" href="#app-chrome">App Chrome</a>
+    <a href="#mode-toggle">Mode Toggle</a>
+    <a href="#settings">Settings</a>
+    <a class="toc-group" href="#overlays">Overlays</a>
+    <a href="#modal">Export Modal</a>
+    <a href="#toast">Toast</a>
+    <a class="toc-group" href="#patterns">Patterns</a>
+    <a href="#out-of-range">Out-of-Range</a>
+    <a href="#validation">Validation</a>
+    <a href="#figma-api">Figma API</a>
+    <a class="toc-group" href="#reference">Reference</a>
+    <a href="#animations">Animations</a>
+    <a href="#class-index">Class Index</a>
+  </nav>
+</aside>
 <div class="ds">
 
   <h1>ChromaScale Design System</h1>
-  <p class="ds-subtitle">Birds-eye view of all UI tokens, components, and compositions used in the app.</p>
+  <p class="ds-subtitle">All UI tokens, components, and patterns used in the app.</p>
 
-  <!-- ========== 1. DESIGN TOKENS ========== -->
-  <h2>1. Design Tokens (CSS Custom Properties)</h2>
+  <!-- ===== FOUNDATIONS ===== -->
+  <h2 id="foundations">Foundations</h2>
 
-  <h3>Color Tokens</h3>
-  <p>Defined as <code>@property</code> registered custom properties so they can be transitioned during theme switches. Values are set at runtime from the first scale's steps via <code>_applyThemeFromScale()</code>.</p>
+  <h3 id="tokens">Design Tokens</h3>
+
+  <h4>Color Tokens</h4>
+  <p>Registered via <code>@property</code> for animated theme transitions. Values set at runtime from the first scale's steps.</p>
   <table class="token-table">
-    <thead><tr><th>Variable</th><th>Initial (Light)</th><th>Scale Step</th><th>Used By</th></tr></thead>
+    <thead><tr><th>Variable</th><th>Step</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>--bg</code></td><td><span class="swatch-sm" style="background:#ffffff"></span>#ffffff</td><td>step 0</td><td>Page background, buttons, inputs</td></tr>
-      <tr><td><code>--bg-subtle</code></td><td><span class="swatch-sm" style="background:#fafafa"></span>#fafafa</td><td>step 20</td><td>Curve panel bg, hover rows</td></tr>
-      <tr><td><code>--bg-muted</code></td><td><span class="swatch-sm" style="background:#f5f5f5"></span>#f5f5f5</td><td>step 60</td><td>Mode toggle bg, code blocks, hover states</td></tr>
-      <tr><td><code>--bg-alt</code></td><td><span class="swatch-sm" style="background:#fafafa"></span>#fafafa</td><td>step 50</td><td>(reserved)</td></tr>
-      <tr><td><code>--hover</code></td><td><span class="swatch-sm" style="background:#fafafa"></span>#fafafa</td><td>step 50</td><td>Scale column hover</td></tr>
-      <tr><td><code>--border-alpha</code></td><td><span class="swatch-sm" style="background:rgba(0,0,0,.1)"></span>rgba(0,0,0,.1)</td><td>—</td><td>Swatch inset border (box-shadow)</td></tr>
-      <tr><td><code>--border</code></td><td><span class="swatch-sm" style="background:#e8e8e8"></span>#e8e8e8</td><td>step 200</td><td>All borders, dividers</td></tr>
-      <tr><td><code>--border-strong</code></td><td><span class="swatch-sm" style="background:#d0d0d0"></span>#d0d0d0</td><td>step 300</td><td>Focus rings, input borders</td></tr>
-      <tr><td><code>--border-hover</code></td><td><span class="swatch-sm" style="background:#aaaaaa"></span>#aaaaaa</td><td>step 400</td><td>Button hover border</td></tr>
-      <tr><td><code>--text</code></td><td><span class="swatch-sm" style="background:#111111"></span>#111111</td><td>step 850</td><td>Primary text, headings</td></tr>
-      <tr><td><code>--text-secondary</code></td><td><span class="swatch-sm" style="background:#555555"></span>#555555</td><td>step 600</td><td>Secondary text, labels</td></tr>
-      <tr><td><code>--text-muted</code></td><td><span class="swatch-sm" style="background:#999999"></span>#999999</td><td>step 450</td><td>Placeholders, hints, icons</td></tr>
-      <tr><td><code>--text-muted-strong</code></td><td><span class="swatch-sm" style="background:#777777"></span>#777777</td><td>step 650</td><td>Drag handle hover, more button hover</td></tr>
-      <tr><td><code>--accent</code></td><td><span class="swatch-sm" style="background:#111111"></span>#111111</td><td>step 850</td><td>Primary buttons, tooltips, active chips</td></tr>
-      <tr><td><code>--accent-fg</code></td><td><span class="swatch-sm" style="background:#ffffff"></span>#ffffff</td><td>step 0</td><td>Text on accent backgrounds</td></tr>
-      <tr><td><code>--outline-active</code></td><td><span class="swatch-sm" style="background:#888888"></span>#888888</td><td>step 550</td><td>Selected column ring, swatch row hover ring</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Semantic Accent Tokens</h3>
-  <p>Sourced from the default scales' generated step colors. Each family has a main accent, a subtle background tint, and a foreground (text-on-subtle) variant.</p>
-  <table class="token-table">
-    <thead><tr><th>Variable</th><th>Default</th><th>Source Scale &amp; Step</th><th>Used By</th></tr></thead>
-    <tbody>
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Warning &mdash; A-tier contrast, gamut dot, out-of-range</td></tr>
-      <tr><td><code>--warning</code></td><td><span class="swatch-sm" style="background:var(--warning)"></span>#DB9300</td><td>Yellow 300</td><td>A-tier bar, zone label bg, gamut dot</td></tr>
-      <tr><td><code>--warning-subtle</code></td><td><span class="swatch-sm" style="background:var(--warning-subtle)"></span>#F9EEDA</td><td>Yellow 50</td><td>A badge bg, out-of-range note bg</td></tr>
-      <tr><td><code>--warning-fg</code></td><td><span class="swatch-sm" style="background:var(--warning-fg)"></span>#311A00</td><td>Yellow 800</td><td>A badge text, out-of-range note text</td></tr>
-
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Info &mdash; AA-tier contrast</td></tr>
-      <tr><td><code>--info</code></td><td><span class="swatch-sm" style="background:var(--info)"></span>#6250D6</td><td>Violet 500</td><td>AA-tier bar, zone label bg</td></tr>
-      <tr><td><code>--info-subtle</code></td><td><span class="swatch-sm" style="background:var(--info-subtle)"></span>#EFEDFF</td><td>Violet 50</td><td>AA badge bg</td></tr>
-      <tr><td><code>--info-fg</code></td><td><span class="swatch-sm" style="background:var(--info-fg)"></span>#1D1649</td><td>Violet 800</td><td>AA badge text</td></tr>
-
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Positive &mdash; AAA-tier contrast</td></tr>
-      <tr><td><code>--positive</code></td><td><span class="swatch-sm" style="background:var(--positive)"></span>#199E70</td><td>Aqua 400</td><td>AAA-tier bar, zone label bg</td></tr>
-      <tr><td><code>--positive-subtle</code></td><td><span class="swatch-sm" style="background:var(--positive-subtle)"></span>#E2F4ED</td><td>Aqua 50</td><td>AAA badge bg</td></tr>
-      <tr><td><code>--positive-fg</code></td><td><span class="swatch-sm" style="background:var(--positive-fg)"></span>#022720</td><td>Aqua 800</td><td>AAA badge text</td></tr>
-
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Danger &mdash; delete actions, constraint failures</td></tr>
-      <tr><td><code>--danger</code></td><td><span class="swatch-sm" style="background:var(--danger)"></span>#D03B3B</td><td>Red 450</td><td>Danger dropdown text, fail indicator, error toast</td></tr>
-      <tr><td><code>--danger-subtle</code></td><td><span class="swatch-sm" style="background:var(--danger-subtle)"></span>#FBEBEB</td><td>Red 50</td><td>Fail row bg, danger hover bg</td></tr>
-      <tr><td><code>--danger-fg</code></td><td><span class="swatch-sm" style="background:var(--danger-fg)"></span>#3C0E0E</td><td>Red 800</td><td>Fail badge text</td></tr>
-
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Success &mdash; pass indicators</td></tr>
-      <tr><td><code>--success</code></td><td><span class="swatch-sm" style="background:var(--success)"></span>#649900</td><td>Green 400</td><td>Pass checkmark, pass badge text</td></tr>
-      <tr><td><code>--success-subtle</code></td><td><span class="swatch-sm" style="background:var(--success-subtle)"></span>#EAF3DD</td><td>Green 50</td><td>Pass badge bg</td></tr>
-      <tr><td><code>--success-fg</code></td><td><span class="swatch-sm" style="background:var(--success-fg)"></span>#102700</td><td>Green 800</td><td>Pass badge text (on subtle)</td></tr>
-
-      <tr><td colspan="4" style="font-weight:600;color:var(--text-secondary);background:var(--bg-muted);padding:4px 10px">Adjusted &mdash; L-adjusted step indicators</td></tr>
-      <tr><td><code>--adjusted</code></td><td><span class="swatch-sm" style="background:var(--adjusted)"></span>#3987E5</td><td>Blue 400</td><td>Adjusted dot, Figma API info status</td></tr>
-      <tr><td><code>--adjusted-subtle</code></td><td><span class="swatch-sm" style="background:var(--adjusted-subtle)"></span>#E7F1FB</td><td>Blue 50</td><td>Adjusted badge bg, adjusted row tint</td></tr>
-      <tr><td><code>--adjusted-fg</code></td><td><span class="swatch-sm" style="background:var(--adjusted-fg)"></span>#032042</td><td>Blue 800</td><td>Adjusted badge text</td></tr>
-    </tbody>
-  </table>
-
-  <h3>Layout Tokens</h3>
-  <table class="token-table">
-    <thead><tr><th>Variable</th><th>Value</th><th>Used By</th></tr></thead>
-    <tbody>
-      <tr><td><code>--radius</code></td><td>6px</td><td>Buttons, cards, dropdowns, modals</td></tr>
-      <tr><td><code>--radius-sm</code></td><td>4px</td><td>Small inputs, hex inputs, color swatches, chips</td></tr>
-      <tr><td><code>--font-sans</code></td><td>-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ...</td><td>Everything (base font)</td></tr>
-      <tr><td><code>--font-mono</code></td><td>ui-monospace, "SF Mono", Menlo, Consolas, ...</td><td>Hex values, OKLCH values, code blocks, inputs</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ========== 2. TYPOGRAPHY ========== -->
-  <h2>2. Typography</h2>
-  <p>Base: 13px / 1.5 line-height, <code>var(--font-sans)</code>, <code>-webkit-font-smoothing: antialiased</code>.</p>
-  <table class="token-table">
-    <thead><tr><th>Element / Class</th><th>Size</th><th>Weight</th><th>Color</th><th>Preview</th></tr></thead>
-    <tbody>
-      <tr><td><code>.app-title</code></td><td>14px</td><td>700</td><td>var(--text)</td><td class="font-preview" style="font-size:14px;font-weight:700">ChromaScale</td></tr>
-      <tr><td><code>.app-subtitle</code></td><td>11px</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-size:11px;color:var(--text-muted)">OKLCH color scale tool</td></tr>
-      <tr><td><code>.modal-title</code></td><td>14px</td><td>600</td><td>var(--text)</td><td class="font-preview" style="font-size:14px;font-weight:600">Export scales</td></tr>
-      <tr><td><code>.scale-name-input</code></td><td>13px</td><td>600</td><td>var(--text)</td><td class="font-preview" style="font-size:13px;font-weight:600">Gray</td></tr>
-      <tr><td><code>.curve-panel-title</code></td><td>12px</td><td>600</td><td>var(--text)</td><td class="font-preview" style="font-size:12px;font-weight:600">Curve editor</td></tr>
-      <tr><td><code>.curve-scale-name</code></td><td>12px</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-size:12px;color:var(--text-muted)">Blue</td></tr>
-      <tr><td><code>.step-label</code> (major)</td><td>10px</td><td>600</td><td>var(--text)</td><td class="font-preview" style="font-size:10px;font-weight:600;font-variant-numeric:tabular-nums">450</td></tr>
-      <tr><td><code>.step-label</code> (minor)</td><td>10px</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-size:10px;color:var(--text-muted)">10</td></tr>
-      <tr><td><code>.hex-value</code></td><td>10px mono</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">#5E5D59</td></tr>
-      <tr><td><code>.swatch-oklch</code></td><td>8px mono</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-family:var(--font-mono);font-size:8px;color:var(--text-muted)">L0.55 C0.012 H67</td></tr>
-      <tr><td><code>.btn</code> text</td><td>12px</td><td>500</td><td>var(--text)</td><td class="font-preview" style="font-size:12px;font-weight:500">Add scale</td></tr>
-      <tr><td><code>.dropdown-item</code></td><td>12px</td><td>400</td><td>var(--text)</td><td class="font-preview" style="font-size:12px">Source colors</td></tr>
-      <tr><td><code>.settings-label</code></td><td>12px</td><td>400</td><td>var(--text)</td><td class="font-preview" style="font-size:12px">Lightest point</td></tr>
-      <tr><td><code>.settings-hint</code></td><td>12px</td><td>400</td><td>var(--text-secondary)</td><td class="font-preview" style="font-size:12px;color:var(--text-secondary)">(step 0)</td></tr>
-      <tr><td><code>.source-panel-title</code></td><td>11px</td><td>600</td><td>var(--text-secondary)</td><td class="font-preview" style="font-size:11px;font-weight:600;color:var(--text-secondary)">Source colors &middot; 3</td></tr>
-      <tr><td><code>.source-label</code></td><td>10px</td><td>500</td><td>var(--text-muted)</td><td class="font-preview" style="font-size:10px;font-weight:500;color:var(--text-muted)">Source colors</td></tr>
-      <tr><td><code>.curve-help</code></td><td>10px</td><td>400</td><td>var(--text-muted)</td><td class="font-preview" style="font-size:10px;color:var(--text-muted)">Click curve to add point &middot; ...</td></tr>
-      <tr><td><code>.header-badge</code></td><td>9px</td><td>600</td><td>var(--text-secondary)</td><td class="font-preview" style="font-size:9px;font-weight:600;color:var(--text-secondary)">3 adj</td></tr>
-      <tr><td><code>.contrast-ratio-badge</code></td><td>9px mono</td><td>600</td><td>(per tier)</td><td class="font-preview" style="font-family:var(--font-mono);font-size:9px;font-weight:600">4.5:1</td></tr>
-      <tr><td><code>.contrast-zone-label</code></td><td>8px</td><td>700</td><td>#fff</td><td class="font-preview" style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">AAA &ge;7:1</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ========== 3. THEME STEP MAPPING ========== -->
-  <h2>3. Self-Theming: Scale Step &rarr; CSS Variable Mapping</h2>
-  <p>The first scale's generated steps are mapped to theme variables at runtime. Both light and dark modes use the same mapping — dark steps are already semantically correct.</p>
-  <table class="step-map-table">
-    <thead><tr><th>CSS Variable</th><th>Step</th><th>Semantic Role</th></tr></thead>
-    <tbody>
-      <tr><td><code>--bg</code></td><td>0</td><td>Page background</td></tr>
-      <tr><td><code>--bg-subtle</code>, <code>--bg-alt</code>, <code>--hover</code></td><td>20</td><td>Subtle surfaces, hover</td></tr>
-      <tr><td><code>--bg-muted</code></td><td>60</td><td>Muted backgrounds</td></tr>
-      <tr><td><code>--border</code></td><td>200</td><td>Default borders</td></tr>
-      <tr><td><code>--border-strong</code></td><td>300</td><td>Emphasized borders</td></tr>
-      <tr><td><code>--border-hover</code></td><td>400</td><td>Hover-state borders</td></tr>
-      <tr><td><code>--text-muted</code></td><td>450</td><td>Muted text, placeholders</td></tr>
-      <tr><td><code>--outline-active</code></td><td>550</td><td>Active outlines, focus rings</td></tr>
-      <tr><td><code>--text-secondary</code></td><td>600</td><td>Secondary text</td></tr>
+      <tr><td><code>--bg</code></td><td>0</td><td>Page background, buttons, inputs</td></tr>
+      <tr><td><code>--bg-subtle</code></td><td>20</td><td>Curve panel bg, hover rows</td></tr>
+      <tr><td><code>--bg-muted</code></td><td>60</td><td>Toggle bg, code blocks, hover states</td></tr>
+      <tr><td><code>--bg-alt</code>, <code>--hover</code></td><td>50</td><td>Scale header bar, column hover</td></tr>
+      <tr><td><code>--border</code></td><td>200</td><td>All borders, dividers</td></tr>
+      <tr><td><code>--border-strong</code></td><td>300</td><td>Focus rings, input borders</td></tr>
+      <tr><td><code>--border-hover</code></td><td>400</td><td>Button hover border</td></tr>
+      <tr><td><code>--text-muted</code></td><td>450</td><td>Placeholders, hints, icons</td></tr>
+      <tr><td><code>--outline-active</code></td><td>550</td><td>Selected column ring, focus</td></tr>
+      <tr><td><code>--text-secondary</code></td><td>600</td><td>Secondary text, labels</td></tr>
       <tr><td><code>--text-muted-strong</code></td><td>650</td><td>Stronger muted text</td></tr>
-      <tr><td><code>--text</code>, <code>--accent</code></td><td>850</td><td>Primary text, accent color</td></tr>
-      <tr><td><code>--accent-fg</code></td><td>0</td><td>Text on accent (inverted bg)</td></tr>
+      <tr><td><code>--text</code>, <code>--accent</code></td><td>850</td><td>Primary text, buttons, tooltips</td></tr>
+      <tr><td><code>--accent-fg</code></td><td>0</td><td>Text on accent backgrounds</td></tr>
     </tbody>
   </table>
 
-  <!-- ========== 4. ICONS ========== -->
-  <h2>4. Icons</h2>
-  <p>24 inline SVGs via <code>icon(name, size?, extraClass?)</code>. Default size 16px. Stroke-based icons use <code>currentColor</code>. Three fill-based: dots-six-vertical, dots-three, spinner.</p>
+  <h4>Layout Tokens</h4>
+  <table class="token-table">
+    <thead><tr><th>Variable</th><th>Value</th></tr></thead>
+    <tbody>
+      <tr><td><code>--radius</code></td><td>6px</td></tr>
+      <tr><td><code>--radius-sm</code></td><td>4px</td></tr>
+      <tr><td><code>--font-sans</code></td><td>-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ...</td></tr>
+      <tr><td><code>--font-mono</code></td><td>ui-monospace, "SF Mono", Menlo, Consolas, ...</td></tr>
+    </tbody>
+  </table>
 
-  <h3>Stroke Icons (ICON_PATHS)</h3>
+  <h3 id="semantic-colors">Semantic Colors</h3>
+  <p>Each family maps to a named scale. Colorful fallback values in <code>:root</code>; JS overrides at runtime from actual scale steps.</p>
+  <table class="token-table">
+    <thead><tr><th>Family</th><th>Scale</th><th>Main</th><th>Subtle</th><th>Fg</th><th>Used By</th></tr></thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:600">Warning</td><td>Yellow</td>
+        <td><span class="swatch-sm" style="background:var(--warning)"></span>300</td>
+        <td><span class="swatch-sm" style="background:var(--warning-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--warning-fg)"></span>800</td>
+        <td>A-tier pill, gamut dot, out-of-range</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600">Info</td><td>Violet</td>
+        <td><span class="swatch-sm" style="background:var(--info)"></span>500</td>
+        <td><span class="swatch-sm" style="background:var(--info-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--info-fg)"></span>800</td>
+        <td>AA-tier pill</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600">Positive</td><td>Aqua</td>
+        <td><span class="swatch-sm" style="background:var(--positive)"></span>400</td>
+        <td><span class="swatch-sm" style="background:var(--positive-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--positive-fg)"></span>800</td>
+        <td>AAA-tier pill</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600">Danger</td><td>Red</td>
+        <td><span class="swatch-sm" style="background:var(--danger)"></span>450</td>
+        <td><span class="swatch-sm" style="background:var(--danger-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--danger-fg)"></span>800</td>
+        <td>Delete, fail, error, settings warning</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600">Success</td><td>Green</td>
+        <td><span class="swatch-sm" style="background:var(--success)"></span>400</td>
+        <td><span class="swatch-sm" style="background:var(--success-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--success-fg)"></span>800</td>
+        <td>Pass indicators</td>
+      </tr>
+      <tr>
+        <td style="font-weight:600">Adjusted</td><td>Blue</td>
+        <td><span class="swatch-sm" style="background:var(--adjusted)"></span>400</td>
+        <td><span class="swatch-sm" style="background:var(--adjusted-subtle)"></span>50</td>
+        <td><span class="swatch-sm" style="background:var(--adjusted-fg)"></span>800</td>
+        <td>L-adjusted steps, Figma info</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3 id="typography">Typography</h3>
+  <p>Base: 13px / 1.5, <code>var(--font-sans)</code>, antialiased.</p>
+  <table class="token-table">
+    <thead><tr><th>Class</th><th>Size</th><th>Weight</th><th>Preview</th></tr></thead>
+    <tbody>
+      <tr><td><code>.app-title</code></td><td>14px</td><td>700</td><td class="font-preview" style="font-size:14px;font-weight:700">ChromaScale</td></tr>
+      <tr><td><code>.modal-title</code></td><td>14px</td><td>600</td><td class="font-preview" style="font-size:14px;font-weight:600">Export scales</td></tr>
+      <tr><td><code>.scale-name-input</code></td><td>13px</td><td>600</td><td class="font-preview" style="font-size:13px;font-weight:600">Gray</td></tr>
+      <tr><td><code>.curve-panel-title</code></td><td>12px</td><td>600</td><td class="font-preview" style="font-size:12px;font-weight:600">Curve editor</td></tr>
+      <tr><td><code>.btn</code></td><td>12px</td><td>500</td><td class="font-preview" style="font-size:12px;font-weight:500">Add scale</td></tr>
+      <tr><td><code>.dropdown-item</code></td><td>12px</td><td>400</td><td class="font-preview" style="font-size:12px">Source colors</td></tr>
+      <tr><td><code>.settings-label</code></td><td>12px</td><td>400</td><td class="font-preview" style="font-size:12px">Lightest point</td></tr>
+      <tr><td><code>.step-label</code></td><td>10px</td><td>600/400</td><td class="font-preview" style="font-size:10px;font-weight:600;font-variant-numeric:tabular-nums">450</td></tr>
+      <tr><td><code>.hex-value</code></td><td>10px mono</td><td>400</td><td class="font-preview" style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)">#5E5D59</td></tr>
+      <tr><td><code>.contrast-zone-pill</code></td><td>10px</td><td>700</td><td class="font-preview" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em">AAA &middot; &ge;7:1</td></tr>
+      <tr><td><code>.contrast-ratio-badge</code></td><td>9px mono</td><td>600</td><td class="font-preview" style="font-family:var(--font-mono);font-size:9px;font-weight:600">+500 &middot; 5.1:1</td></tr>
+      <tr><td><code>.header-badge</code></td><td>9px</td><td>600</td><td class="font-preview" style="font-size:9px;font-weight:600;color:var(--text-secondary)">3 adj</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="icons">Icons</h3>
+  <p>Inline SVGs via <code>icon(name, size?)</code>. Default 16px. Stroke-based use <code>currentColor</code>.</p>
+  <h4>Stroke Icons</h4>
   <div class="ds-grid-sm" id="stroke-icons"></div>
-
-  <h3>Fill Icons (ICON_FILL_PATHS)</h3>
+  <h4>Fill Icons</h4>
   <div class="ds-grid-sm" id="fill-icons"></div>
 
-  <h3>Icon Sizes Used in App</h3>
-  <table class="token-table">
-    <thead><tr><th>Context</th><th>Size</th><th>Icons</th></tr></thead>
-    <tbody>
-      <tr><td>Mode toggle buttons</td><td>14px</td><td>sun, moon</td></tr>
-      <tr><td>Header buttons (<code>.btn</code> with text)</td><td>14px</td><td>plus, export</td></tr>
-      <tr><td>Header icon-only buttons (<code>.btn-icon-only</code>)</td><td>16px</td><td>gear, arrow-counter-clockwise, arrow-clockwise, floppy-disk</td></tr>
-      <tr><td>Dropdown items</td><td>16px</td><td>grid-four, chart-line, copy, trash</td></tr>
-      <tr><td>Swatch action buttons</td><td>14px</td><td>copy, check, chart-line</td></tr>
-      <tr><td>Source panel close</td><td>14px</td><td>x</td></tr>
-      <tr><td>Curve panel close</td><td>16px</td><td>x</td></tr>
-      <tr><td>Modal close</td><td>16px</td><td>x</td></tr>
-      <tr><td>Drag handle</td><td>14px</td><td>dots-six-vertical</td></tr>
-      <tr><td>Scale more button</td><td>16px</td><td>dots-three</td></tr>
-      <tr><td>Add/remove color buttons</td><td>14px / 12px</td><td>plus, minus</td></tr>
-      <tr><td>Figma API section titles</td><td>14px</td><td>key, terminal, cloud-arrow-up, folders, sliders-horizontal</td></tr>
-    </tbody>
-  </table>
+  <!-- ===== COMPONENTS ===== -->
+  <h2 id="components">Components</h2>
 
-  <!-- ========== 5. BUTTONS ========== -->
-  <h2>5. Buttons</h2>
+  <h3 id="buttons">Buttons</h3>
 
-  <h3>.btn .btn-secondary (default)</h3>
-  <p>Layered box-shadow border system: spacer &rarr; border &rarr; outline &rarr; ring. Transitions on hover/active change each layer.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <button class="btn btn-secondary" onclick="return false">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        Add scale
-      </button>
-      <button class="btn btn-secondary" onclick="return false">Export</button>
-    </div>
-    <div class="note">Classes: <span class="cls">.btn</span> <span class="cls">.btn-secondary</span></div>
-  </div>
-
-  <h3>.btn .btn-primary</h3>
-  <p>Accent background with inverted text. Used for the main Export button.</p>
   <div class="demo-box">
     <div class="ds-inline">
       <button class="btn btn-primary" onclick="return false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
         Export
       </button>
+      <button class="btn btn-secondary" onclick="return false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add scale
+      </button>
+      <button class="btn btn-ghost" onclick="return false">Ghost</button>
     </div>
-    <div class="note">Classes: <span class="cls">.btn</span> <span class="cls">.btn-primary</span></div>
-  </div>
-
-  <h3>.btn .btn-icon-only</h3>
-  <p>28px height, icon-only. Used in header for settings, save, reset.</p>
-  <div class="demo-box">
     <div class="ds-inline">
       <button class="btn btn-secondary btn-icon-only" onclick="return false">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1.08-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1.08 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1.08z"/></svg>
       </button>
-      <button class="btn btn-secondary btn-icon-only" onclick="return false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
-      </button>
-      <button class="btn btn-secondary btn-icon-only" disabled onclick="return false">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.13-9.36L23 10"/></svg>
-      </button>
-    </div>
-    <div class="note">Classes: <span class="cls">.btn</span> <span class="cls">.btn-secondary</span> <span class="cls">.btn-icon-only</span> &mdash; <code>:disabled</code> gets <code>opacity: 0.3</code></div>
-  </div>
-
-  <h3>.btn-ghost</h3>
-  <p>No border, transparent background. Hover shows muted bg.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <button class="btn btn-ghost" onclick="return false">Ghost button</button>
-    </div>
-    <div class="note">Classes: <span class="cls">.btn</span> <span class="cls">.btn-ghost</span></div>
-  </div>
-
-  <h3>.btn-icon</h3>
-  <p>24x24 transparent icon button. Used for close, remove-color, and misc actions.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
       <button class="btn-icon" onclick="return false">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
-      <button class="btn-icon" onclick="return false">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
-      </button>
-    </div>
-    <div class="note">Class: <span class="cls">.btn-icon</span> &mdash; 24x24, transparent, muted icon, hover shows bg-muted + text color</div>
-  </div>
-
-  <h3>.swatch-action-btn</h3>
-  <p>22x22 button for swatch row hover actions (copy, graph). Hidden until row hover.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
       <button class="swatch-action-btn" onclick="return false" style="opacity:1">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
       </button>
-      <button class="swatch-action-btn" onclick="return false" style="opacity:1">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
-      </button>
-    </div>
-    <div class="note">Class: <span class="cls">.swatch-action-btn</span> &mdash; parent <span class="cls">.swatch-actions</span> is <code>opacity:0</code>, becomes 1 on <code>.swatch-row:hover</code></div>
-  </div>
-
-  <!-- ========== 6. FORM INPUTS ========== -->
-  <h2>6. Form Inputs</h2>
-
-  <h3>.control-input</h3>
-  <p>Used in settings popover and curve panel controls.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <input type="number" class="control-input" value="1.00" style="width:70px">
-      <input type="number" class="control-input" value="0.15" style="width:70px">
-    </div>
-    <div class="note">Class: <span class="cls">.control-input</span> &mdash; 60px wide, mono font, 11px, border-color transitions on focus to <code>var(--accent)</code></div>
-  </div>
-
-  <h3>.hex-input</h3>
-  <p>Inline hex color text input in source colors panel.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <input type="text" class="hex-input" value="#D97757" style="width:80px">
-    </div>
-    <div class="note">Class: <span class="cls">.hex-input</span> &mdash; mono font, 10px, flex:1</div>
-  </div>
-
-  <h3>.scale-name-input</h3>
-  <p>Inline editable scale name. Transparent until focused.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <input type="text" class="scale-name-input" value="Blue" style="width:120px">
-    </div>
-    <div class="note">Class: <span class="cls">.scale-name-input</span> &mdash; 13px, weight 600, transparent bg, focus shows bg + ring</div>
-  </div>
-
-  <h3>.color-swatch-input</h3>
-  <p>20x20 swatch wrapping a hidden native <code>&lt;input type="color"&gt;</code>.</p>
-  <div class="demo-box">
-    <div class="color-input-row" style="width:200px">
-      <div class="color-swatch-input" style="background:#D97757">
-        <input type="color" class="native-color-picker" value="#D97757">
-      </div>
-      <input type="text" class="hex-input" value="#D97757">
-      <button class="btn-icon btn-remove-color" onclick="return false">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
-      </button>
-    </div>
-    <div class="note" style="margin-top:8px">Classes: <span class="cls">.color-input-row</span> > <span class="cls">.color-swatch-input</span> + <span class="cls">.hex-input</span> + <span class="cls">.btn-remove-color</span></div>
-  </div>
-
-  <h3>.fap-input (Figma API)</h3>
-  <p>Full-width input for Figma API panel fields.</p>
-  <div class="demo-box">
-    <div style="width:300px">
-      <label class="fap-label">File URL</label>
-      <input type="text" class="fap-input fap-input-mono" placeholder="https://figma.com/file/..." value="">
-    </div>
-    <div class="note" style="margin-top:8px">Classes: <span class="cls">.fap-input</span> + optional <span class="cls">.fap-input-mono</span> / <span class="cls">.fap-input-sm</span></div>
-  </div>
-
-  <!-- ========== 7. BADGES & STATUS ========== -->
-  <h2>7. Badges &amp; Status Indicators</h2>
-
-  <h3>.header-badge</h3>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <span class="header-badge adjusted-badge">3 adj</span>
-    </div>
-    <div class="note">Classes: <span class="cls">.header-badge</span> <span class="cls">.adjusted-badge</span> &mdash; 9px, bg-muted/text-secondary</div>
-  </div>
-
-  <h3>.status-badge</h3>
-  <p>Used in curve panel validation sidebar.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <span class="status-badge pass">&check; All constraints met</span>
-      <span class="status-badge fail">2 constraints failed</span>
-      <span class="status-badge adjusted">5 steps adjusted</span>
-    </div>
-    <div class="note">Classes: <span class="cls">.status-badge</span> + <span class="cls">.pass</span> / <span class="cls">.fail</span> / <span class="cls">.adjusted</span></div>
-  </div>
-
-  <h3>.validation-summary</h3>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <span class="validation-summary all-pass">&check;</span>
-      <span class="validation-summary has-fails">2 fail</span>
-    </div>
-    <div class="note">Classes: <span class="cls">.validation-summary</span> + <span class="cls">.all-pass</span> / <span class="cls">.has-fails</span></div>
-  </div>
-
-  <h3>.contrast-ratio-badge (per WCAG tier)</h3>
-  <p>Appears on swatch rows when hovering any step. Positioned absolute right.</p>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <span style="position:relative;display:inline-flex;align-items:center;padding:4px 40px 4px 8px;">
-        <span class="contrast-ratio-badge" style="position:relative;right:auto;top:auto;transform:none;background:#fef3c7;color:#92400e">3.2:1</span>
-      </span>
-      <span style="position:relative;display:inline-flex;align-items:center;padding:4px 40px 4px 8px;">
-        <span class="contrast-ratio-badge" style="position:relative;right:auto;top:auto;transform:none;background:#e0e7ff;color:#3730a3">5.1:1</span>
-      </span>
-      <span style="position:relative;display:inline-flex;align-items:center;padding:4px 40px 4px 8px;">
-        <span class="contrast-ratio-badge" style="position:relative;right:auto;top:auto;transform:none;background:#d1fae5;color:#065f46">8.2:1</span>
-      </span>
-      <span style="position:relative;display:inline-flex;align-items:center;padding:4px 40px 4px 8px;">
-        <span class="contrast-ratio-badge" style="position:relative;right:auto;top:auto;transform:none;background:var(--bg-muted);color:var(--text-muted)">1.8:1</span>
-      </span>
     </div>
     <div class="note">
-      Tier classes on <code>.swatch-row</code>: <span class="cls">.contrast-a</span> (amber) <span class="cls">.contrast-aa</span> (indigo) <span class="cls">.contrast-aaa</span> (emerald) <span class="cls">.contrast-none</span> (muted, opacity 0.5)
+      <span class="cls">.btn-primary</span> <span class="cls">.btn-secondary</span> <span class="cls">.btn-ghost</span> <span class="cls">.btn-icon-only</span> <span class="cls">.btn-icon</span> <span class="cls">.swatch-action-btn</span>
     </div>
   </div>
 
-  <h3>.contrast-zone-label</h3>
-  <p>Small absolute label at zone boundary rows.</p>
+  <h3 id="form-inputs">Form Inputs</h3>
+
   <div class="demo-box">
     <div class="ds-inline">
-      <span class="contrast-zone-label zone-label-a" style="position:relative;right:auto;top:auto">A &ge;3:1</span>
-      <span class="contrast-zone-label zone-label-aa" style="position:relative;right:auto;top:auto">AA &ge;4.5:1</span>
-      <span class="contrast-zone-label zone-label-aaa" style="position:relative;right:auto;top:auto">AAA &ge;7:1</span>
+      <input type="number" class="control-input" value="1.00" style="inline-size:70px">
+      <input type="text" class="hex-input" value="#D97757" style="inline-size:80px">
+      <input type="text" class="scale-name-input" value="Blue" style="inline-size:100px">
     </div>
-    <div class="note">Classes: <span class="cls">.contrast-zone-label</span> + <span class="cls">.zone-label-a</span> / <span class="cls">.zone-label-aa</span> / <span class="cls">.zone-label-aaa</span></div>
+    <div class="ds-inline" style="margin-block-end:0">
+      <div class="color-input-row" style="inline-size:200px">
+        <div class="color-swatch-input" style="background:#D97757">
+          <input type="color" class="native-color-picker" value="#D97757">
+        </div>
+        <input type="text" class="hex-input" value="#D97757">
+        <button class="btn-icon btn-remove-color" onclick="return false">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="note" style="margin-block-start:8px">
+      <span class="cls">.control-input</span> <span class="cls">.hex-input</span> <span class="cls">.scale-name-input</span> <span class="cls">.color-input-row</span> &gt; <span class="cls">.color-swatch-input</span>
+    </div>
   </div>
 
-  <h3>Swatch indicator dots</h3>
-  <div class="demo-box">
-    <div class="ds-inline">
-      <div style="position:relative;width:26px;height:26px;border-radius:6px;background:#D97757;border:1px solid var(--border)">
-        <span class="gamut-dot"></span>
+  <!-- ===== SCALE UI ===== -->
+  <h2 id="scale-ui">Scale UI</h2>
+
+  <h3 id="swatch-rows">Swatch Rows</h3>
+  <p>35 per column. Major steps (multiples of 50) are taller; minor steps are compact. Full-width color blocks with hover overlay.</p>
+
+  <div class="demo-box" style="max-inline-size:300px">
+    <div class="swatch-row" style="background:#87867f;block-size:40px;border-radius:16px;position:relative">
+      <div class="swatch-overlay" style="opacity:1;pointer-events:auto;color:#141413">
+        <div class="swatch-info">
+          <div class="swatch-label-hex"><span class="step-label">450</span><span class="swatch-oklch">L0.58 C0.010 H67</span></div>
+        </div>
+        <div class="swatch-actions">
+          <button class="swatch-action-btn" onclick="return false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button>
+          <button class="swatch-action-btn" onclick="return false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></button>
+        </div>
       </div>
-      <span style="font-size:11px;color:var(--text-secondary)">Gamut-clamped (amber dot, top-right)</span>
     </div>
-    <div class="ds-inline">
-      <div style="position:relative;width:26px;height:26px;border-radius:6px;background:#6366f1;border:1px solid var(--border)">
-        <span class="adjusted-dot"></span>
-      </div>
-      <span style="font-size:11px;color:var(--text-secondary)">L-adjusted for contrast (blue dot, bottom-right)</span>
+    <div style="display:flex;gap:4px;margin-block-start:4px">
+      <div class="swatch-row minor" style="background:#9c9a92;block-size:22px;border-radius:16px;flex:1"></div>
     </div>
-    <div class="note">Classes: <span class="cls">.gamut-dot</span> (#f59e0b) and <span class="cls">.adjusted-dot</span> (#3b82f6) &mdash; 6px circles, absolute positioned</div>
+    <div class="note" style="margin-block-start:8px">
+      <span class="cls">.swatch-row</span> <span class="cls">.minor</span> <span class="cls">.swatch-overlay</span> (visible on hover)<br>
+      Indicator dots: <span class="cls">.gamut-dot</span> (amber, gamut-clamped) &middot; <span class="cls">.adjusted-dot</span> (blue, L-adjusted)
+    </div>
   </div>
 
-  <!-- ========== 8. SWATCH ROWS ========== -->
-  <h2>8. Swatch Rows</h2>
-  <p>Each scale column contains 35 swatch rows. Major steps (multiples of 50) are taller; minor steps (10, 20, 30, 40) are compact.</p>
-
-  <h3>Major Step Row</h3>
-  <div class="demo-box" style="max-width:300px">
-    <div class="swatch-row" style="border-bottom:1px solid var(--border)">
-      <div class="swatch-color" style="background:#87867f"></div>
-      <div class="swatch-info">
-        <div class="swatch-label-hex"><span class="step-label">450</span><span class="hex-value">#87867F</span></div>
-        <div class="swatch-oklch">L0.58 C0.010 H67</div>
-      </div>
-      <div class="swatch-actions" style="opacity:1">
-        <button class="swatch-action-btn" onclick="return false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg></button>
-        <button class="swatch-action-btn" onclick="return false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></button>
-      </div>
-    </div>
-    <div class="note" style="margin-top:8px">Class: <span class="cls">.swatch-row</span> &mdash; min-height 32px, flex row, border-bottom</div>
-  </div>
-
-  <h3>Minor Step Row</h3>
-  <div class="demo-box" style="max-width:300px">
-    <div class="swatch-row minor" style="border-bottom:1px solid var(--border)">
-      <div class="swatch-color" style="background:#9c9a92;width:12px;height:12px;border-radius:4px"></div>
-      <div class="swatch-info">
-        <div class="swatch-label-hex"><span class="step-label" style="font-weight:400;color:var(--text-muted)">410</span><span class="hex-value">#9C9A92</span></div>
-      </div>
-    </div>
-    <div class="note" style="margin-top:8px">Classes: <span class="cls">.swatch-row</span> <span class="cls">.minor</span> &mdash; 16-20px height, indented, smaller swatch, no OKLCH line</div>
-  </div>
-
-  <h3>Adjusted Step Row</h3>
-  <div class="demo-box" style="max-width:300px">
-    <div class="swatch-row adjusted" style="border-bottom:1px solid var(--border)">
-      <div class="swatch-color" style="background:#0f4b87;position:relative">
-        <span class="adjusted-dot"></span>
-      </div>
-      <div class="swatch-info">
-        <div class="swatch-label-hex"><span class="step-label">700</span><span class="hex-value">#0F4B87</span></div>
-        <div class="swatch-oklch">L0.35 C0.108 H250</div>
-      </div>
-    </div>
-    <div class="note" style="margin-top:8px">Class: <span class="cls">.swatch-row</span> <span class="cls">.adjusted</span> &mdash; subtle blue bg highlight (rgba(59,130,246,0.04))</div>
-  </div>
-
-  <!-- ========== 9. CONTRAST HOVER SYSTEM ========== -->
-  <h2>9. Contrast Hover System</h2>
-  <p>When hovering any swatch row, all other rows receive a WCAG tier class and a contrast ratio badge. The hovered row gets <code>.hover-source</code>.</p>
+  <h3 id="contrast-hover">Contrast Hover</h3>
+  <p>Hovering a swatch adds WCAG tier classes and ratio badges to all other rows. Vertical pills appear in the column gap.</p>
 
   <table class="token-table">
-    <thead><tr><th>Tier</th><th>Gap</th><th>Row Class</th><th>Token Family</th><th>Badge (Light)</th><th>Bar</th></tr></thead>
+    <thead><tr><th>Tier</th><th>Gap</th><th>Class</th><th>Pill Color</th></tr></thead>
     <tbody>
-      <tr>
-        <td>AAA (7:1)</td><td>&ge; 600</td>
-        <td><code>.contrast-aaa</code></td>
-        <td><code>--positive</code> (Aqua)</td>
-        <td><span class="swatch-sm" style="background:var(--positive-subtle)"></span><code>--positive-subtle</code> / <code>--positive-fg</code></td>
-        <td><span class="swatch-sm" style="background:var(--positive)"></span><code>--positive</code></td>
-      </tr>
-      <tr>
-        <td>AA (4.5:1)</td><td>&ge; 500</td>
-        <td><code>.contrast-aa</code></td>
-        <td><code>--info</code> (Violet)</td>
-        <td><span class="swatch-sm" style="background:var(--info-subtle)"></span><code>--info-subtle</code> / <code>--info-fg</code></td>
-        <td><span class="swatch-sm" style="background:var(--info)"></span><code>--info</code></td>
-      </tr>
-      <tr>
-        <td>A (3:1)</td><td>&ge; 400</td>
-        <td><code>.contrast-a</code></td>
-        <td><code>--warning</code> (Yellow)</td>
-        <td><span class="swatch-sm" style="background:var(--warning-subtle)"></span><code>--warning-subtle</code> / <code>--warning-fg</code></td>
-        <td><span class="swatch-sm" style="background:var(--warning)"></span><code>--warning</code></td>
-      </tr>
-      <tr>
-        <td>None</td><td>&lt; 400</td>
-        <td><code>.contrast-none</code></td>
-        <td>(neutral tokens)</td>
-        <td><code>--bg-muted</code> / <code>--text-muted</code></td>
-        <td>(none)</td>
-      </tr>
+      <tr><td>AAA (7:1)</td><td>&ge; 600</td><td><code>.contrast-aaa</code></td><td><span class="swatch-sm" style="background:var(--positive)"></span><code>--positive</code></td></tr>
+      <tr><td>AA (4.5:1)</td><td>&ge; 500</td><td><code>.contrast-aa</code></td><td><span class="swatch-sm" style="background:var(--info)"></span><code>--info</code></td></tr>
+      <tr><td>A (3:1)</td><td>&ge; 400</td><td><code>.contrast-a</code></td><td><span class="swatch-sm" style="background:var(--warning)"></span><code>--warning</code></td></tr>
+      <tr><td>None</td><td>&lt; 400</td><td><code>.contrast-none</code></td><td>&mdash; (row opacity 0.5)</td></tr>
     </tbody>
   </table>
-  <p>Row tints use <code>color-mix(in srgb, var(--tier) 8%, transparent)</code>. Left bar: <code>box-shadow: inset 3px 0 0 var(--tier)</code>. <code>.contrast-none</code> gets <code>opacity: 0.5</code>.</p>
 
-  <!-- ========== 10. DROPDOWN ========== -->
-  <h2>10. Dropdown Menu</h2>
-  <div class="demo-box" style="max-width:240px">
-    <div class="scale-dropdown" style="position:relative;top:0;animation:none">
+  <h4>.contrast-ratio-badge</h4>
+  <div class="demo-box">
+    <div class="ds-inline">
+      <span style="position:relative;display:inline-flex;align-items:center;padding-block:4px;padding-inline:8px;background:#f5d0a9;border-radius:6px;">
+        <span class="contrast-ratio-badge" style="position:relative;inset-inline-end:auto;inset-block-start:auto;transform:none;background:#f8e8d4;color:#5c2d0e">+400 &middot; 3.2:1</span>
+      </span>
+      <span style="position:relative;display:inline-flex;align-items:center;padding-block:4px;padding-inline:8px;background:#a9c4f5;border-radius:6px;">
+        <span class="contrast-ratio-badge" style="position:relative;inset-inline-end:auto;inset-block-start:auto;transform:none;background:#c8d8f5;color:#1a2744">+500 &middot; 5.1:1</span>
+      </span>
+      <span style="position:relative;display:inline-flex;align-items:center;padding-block:4px;padding-inline:8px;background:#a9f5c4;border-radius:6px;">
+        <span class="contrast-ratio-badge" style="position:relative;inset-inline-end:auto;inset-block-start:auto;transform:none;background:#c8f5d8;color:#0a3d1e">+600 &middot; 8.2:1</span>
+      </span>
+    </div>
+    <div class="note">Format: <code>+{gap} &middot; {ratio}:1</code>. Colors set inline from scale palette (700-step text, 100-step bg, flips at 500).</div>
+  </div>
+
+  <h4>.contrast-zone-pill</h4>
+  <div class="demo-box">
+    <div class="ds-inline" style="gap:16px;align-items:stretch;block-size:120px;">
+      <div style="position:relative;inline-size:14px;block-size:120px;">
+        <div class="contrast-zone-pill pill-a" style="position:relative;inset-inline-end:auto;inset-block-start:auto;block-size:100%;justify-content:flex-end"><span class="pill-tier">A</span><span class="pill-ratio">&middot; &ge;3:1</span></div>
+      </div>
+      <div style="position:relative;inline-size:14px;block-size:120px;">
+        <div class="contrast-zone-pill pill-aa" style="position:relative;inset-inline-end:auto;inset-block-start:auto;block-size:100%;justify-content:flex-end"><span class="pill-tier">AA</span><span class="pill-ratio">&middot; &ge;4.5:1</span></div>
+      </div>
+      <div style="position:relative;inline-size:14px;block-size:120px;">
+        <div class="contrast-zone-pill pill-aaa" style="position:relative;inset-inline-end:auto;inset-block-start:auto;block-size:100%;justify-content:flex-end"><span class="pill-tier">AAA</span><span class="pill-ratio">&middot; &ge;7:1</span></div>
+      </div>
+    </div>
+    <div class="note">
+      Positioned on <span class="cls">.scale-column</span> in the gap between columns. Text aligns to edge closest to hover source.<br>
+      <span class="cls">.pill-tier</span> (never truncated) + <span class="cls">.pill-ratio</span> (ellipsis on overflow).
+    </div>
+  </div>
+
+  <h3 id="scale-menu">Scale Menu</h3>
+  <div class="demo-box" style="max-inline-size:240px">
+    <div class="scale-dropdown" style="position:relative;inset-block-start:0;animation:none">
       <button class="dropdown-item" onclick="return false">
         <span class="dropdown-item-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
         <span class="dropdown-item-label">Source colors</span>
@@ -553,11 +396,13 @@
         <span class="dropdown-item-label">Delete scale</span>
       </button>
     </div>
-    <div class="note" style="margin-top:8px">Classes: <span class="cls">.scale-dropdown</span> > <span class="cls">.dropdown-item</span>, <span class="cls">.dropdown-divider</span>, <span class="cls">.dropdown-item-danger</span></div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.scale-dropdown</span> &gt; <span class="cls">.dropdown-item</span> <span class="cls">.dropdown-divider</span> <span class="cls">.dropdown-item-danger</span></div>
   </div>
 
-  <!-- ========== 11. MODE TOGGLE ========== -->
-  <h2>11. Mode Toggle</h2>
+  <!-- ===== APP CHROME ===== -->
+  <h2 id="app-chrome">App Chrome</h2>
+
+  <h3 id="mode-toggle">Mode Toggle</h3>
   <div class="demo-box">
     <div class="mode-toggle" id="demo-mode-toggle" style="display:inline-flex">
       <div class="mode-slider" id="demo-mode-slider"></div>
@@ -572,51 +417,38 @@
         <span class="mode-label">Dark</span>
       </button>
     </div>
-    <div class="note" style="margin-top:8px">
-      Classes: <span class="cls">.mode-toggle</span> > <span class="cls">.mode-slider</span> + <span class="cls">.mode-btn</span> + <span class="cls">.mode-btn.active</span><br>
-      Slider is absolutely positioned, animated via JS (FLIP pattern). Active button gets bold label + filled icon.
+    <div class="note" style="margin-block-start:8px">
+      <span class="cls">.mode-toggle</span> &gt; <span class="cls">.mode-slider</span> (CSS custom properties + transition) + <span class="cls">.mode-btn</span> + <span class="cls">.mode-btn.active</span>
     </div>
   </div>
 
-  <!-- ========== 12. SETTINGS POPOVER ========== -->
-  <h2>12. Settings Popover</h2>
-  <div class="demo-box" style="max-width:300px">
-    <div class="settings-popover" style="position:relative;top:0">
+  <h3 id="settings">Settings</h3>
+  <div class="demo-box" style="max-inline-size:300px">
+    <div class="settings-popover" style="position:relative;inset-block-start:0">
       <div class="settings-section">
         <div class="settings-popover-header">Light Mode</div>
         <div class="settings-popover-body">
           <div class="settings-row">
             <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
-            <input type="number" class="control-input" value="1.00" min="0.5" max="1" step="0.01" style="width:70px">
+            <input type="number" class="control-input" value="1.00" style="inline-size:70px">
           </div>
           <div class="settings-row">
             <label class="settings-label">Darkest point <span class="settings-hint">(step 900)</span></label>
-            <input type="number" class="control-input" value="0.15" min="0" max="0.5" step="0.01" style="width:70px">
+            <input type="number" class="control-input" value="0.15" style="inline-size:70px">
           </div>
-        </div>
-      </div>
-      <div class="settings-section">
-        <div class="settings-popover-header">Dark Mode</div>
-        <div class="settings-popover-body">
-          <div class="settings-row">
-            <label class="settings-label">Darkest point <span class="settings-hint">(step 0)</span></label>
-            <input type="number" class="control-input" value="0.15" style="width:70px">
-          </div>
-          <div class="settings-row">
-            <label class="settings-label">Lightest point <span class="settings-hint">(step 900)</span></label>
-            <input type="number" class="control-input" value="0.95" style="width:70px">
-          </div>
+          <div class="settings-warning">Steps 300&ndash;900 only achieve 4.2:1 (needs 7:1 for AAA). Widen the lightness range.</div>
         </div>
       </div>
     </div>
-    <div class="note" style="margin-top:8px">Classes: <span class="cls">.settings-popover</span> > <span class="cls">.settings-section</span> > <span class="cls">.settings-popover-header</span> + <span class="cls">.settings-popover-body</span> > <span class="cls">.settings-row</span></div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.settings-popover</span> &gt; <span class="cls">.settings-section</span> &gt; <span class="cls">.settings-row</span> + <span class="cls">.settings-warning</span></div>
   </div>
 
-  <!-- ========== 13. MODAL ========== -->
-  <h2>13. Export Modal</h2>
-  <p>Centered overlay with backdrop blur. Has tabbed navigation (CSS / JSON / Figma JSON / Figma API).</p>
+  <!-- ===== OVERLAYS ===== -->
+  <h2 id="overlays">Overlays</h2>
+
+  <h3 id="modal">Export Modal</h3>
   <div class="demo-box">
-    <div class="modal" style="position:relative;width:100%;max-width:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
+    <div class="modal" style="position:relative;inline-size:100%;max-inline-size:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
       <div class="modal-header">
         <h2 class="modal-title">Export scales</h2>
         <button class="btn-icon btn-close-modal" onclick="return false">
@@ -630,60 +462,46 @@
         <button class="modal-tab">Figma API</button>
       </div>
       <div class="modal-body">
-        <pre class="export-code" style="max-height:80px">:root {
+        <pre class="export-code" style="max-block-size:60px">:root {
   --gray-0: #FAF9F5;
   --gray-50: #F5F4ED;
-  --gray-100: #F0EEE6;
   /* ... */
 }</pre>
         <div class="export-actions">
-          <button class="btn btn-secondary" onclick="return false">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-            Copy CSS
-          </button>
-          <button class="btn btn-secondary" onclick="return false">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Download CSS
-          </button>
+          <button class="btn btn-secondary" onclick="return false">Copy CSS</button>
+          <button class="btn btn-secondary" onclick="return false">Download CSS</button>
         </div>
       </div>
     </div>
-    <div class="note" style="margin-top:8px">
-      Classes: <span class="cls">.modal-overlay</span> > <span class="cls">.modal</span> > <span class="cls">.modal-header</span> + <span class="cls">.modal-tabs</span> > <span class="cls">.modal-tab</span> + <span class="cls">.modal-body</span><br>
-      Active tab: <span class="cls">.modal-tab.active</span> &mdash; accent bottom border
-    </div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span></div>
   </div>
 
-  <!-- ========== 14. TOAST ========== -->
-  <h2>14. Toast Notification</h2>
+  <h3 id="toast">Toast</h3>
   <div class="demo-box">
-    <div style="position:relative;display:flex;gap:12px;align-items:center">
-      <div class="toast-notification visible" style="position:relative;bottom:auto;left:auto;transform:none;pointer-events:auto">Scales saved to local storage</div>
-      <div class="toast-notification toast-error visible" style="position:relative;bottom:auto;left:auto;transform:none;pointer-events:auto">Failed to save</div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div class="toast-notification visible" style="position:relative;inset-block-end:auto;inset-inline-start:auto;transform:none;pointer-events:auto">Scales saved</div>
+      <div class="toast-notification toast-error visible" style="position:relative;inset-block-end:auto;inset-inline-start:auto;transform:none;pointer-events:auto">Failed to save</div>
     </div>
-    <div class="note" style="margin-top:8px">
-      Class: <span class="cls">.toast-notification</span> + <span class="cls">.visible</span> (triggers slide-up + fade). <span class="cls">.toast-error</span> for red variant. Auto-removes after 2s.
-    </div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.toast-notification</span> + <span class="cls">.visible</span> &middot; <span class="cls">.toast-error</span> for red variant</div>
   </div>
 
-  <!-- ========== 15. OUT OF RANGE ========== -->
-  <h2>15. Out-of-Range Warning</h2>
-  <div class="demo-box" style="max-width:300px">
+  <!-- ===== PATTERNS ===== -->
+  <h2 id="patterns">Patterns</h2>
+
+  <h3 id="out-of-range">Out-of-Range</h3>
+  <div class="demo-box" style="max-inline-size:300px">
     <div class="color-input-row out-of-range">
       <div class="color-swatch-input" style="background:#000;opacity:0.4"></div>
       <input type="text" class="hex-input" value="#000000" style="opacity:0.4">
     </div>
-    <div class="out-of-range-note" style="margin-top:4px">1 input beyond 900 range</div>
-    <div class="note" style="margin-top:8px">
-      Classes: <span class="cls">.color-input-row.out-of-range</span> (diagonal stripe overlay via ::after) + <span class="cls">.out-of-range-note</span> (amber warning box)
-    </div>
+    <div class="out-of-range-note" style="margin-block-start:4px">1 input beyond 900 range</div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.color-input-row.out-of-range</span> (diagonal stripe overlay) + <span class="cls">.out-of-range-note</span></div>
   </div>
 
-  <!-- ========== 16. VALIDATION PANEL ========== -->
-  <h2>16. Contrast Validation Panel</h2>
-  <p>Appears in curve panel sidebar. Collapsible details with constraint pairs grouped by WCAG tier.</p>
-  <div class="demo-box" style="max-width:260px">
-    <div class="constraint-status" style="margin-bottom:8px">
+  <h3 id="validation">Validation</h3>
+  <p>Appears in curve panel sidebar.</p>
+  <div class="demo-box" style="max-inline-size:260px">
+    <div class="constraint-status" style="margin-block-end:8px">
       <span class="status-badge pass">&check; All constraints met</span>
       <span class="status-badge adjusted">3 steps adjusted</span>
     </div>
@@ -698,20 +516,15 @@
           <span class="ci-ratio">8.14:1</span>
           <span class="ci-status ci-pass">&check;</span>
         </div>
-        <div class="contrast-item">
-          <span class="ci-pair">0&rarr;650</span>
-          <span class="ci-ratio">9.73:1</span>
-          <span class="ci-status ci-pass">&check;</span>
-        </div>
         <div class="contrast-item ci-more">+ 12 more passing</div>
       </div>
     </details>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.status-badge</span> (<span class="cls">.pass</span> / <span class="cls">.fail</span> / <span class="cls">.adjusted</span>) &middot; <span class="cls">.validation-details</span> &gt; <span class="cls">.contrast-list</span></div>
   </div>
 
-  <!-- ========== 17. FIGMA API COMPONENTS ========== -->
-  <h2>17. Figma API Panel Components</h2>
-  <p>Used inside the Figma API export tab. All classes prefixed with <code>fap-</code>.</p>
-  <div class="demo-box" style="max-width:400px">
+  <h3 id="figma-api">Figma API</h3>
+  <p>Inside the Figma API export tab. All classes prefixed <code>fap-</code>.</p>
+  <div class="demo-box" style="max-inline-size:400px">
     <div class="figma-api-panel">
       <div class="fap-section">
         <div class="fap-section-title">
@@ -721,163 +534,72 @@
         <div class="fap-field">
           <label class="fap-label">Personal Access Token</label>
           <input class="fap-input fap-input-mono" type="password" placeholder="figd_...">
-          <div class="fap-hint">
-            <a href="#" class="fap-link">Get token</a>
-            <span class="fap-hint-sep">|</span>
-            Requires <code>file_variables:write</code>
-          </div>
-        </div>
-      </div>
-      <div class="fap-section">
-        <div class="fap-section-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 1v6M8 9v6M16 17v6"/></svg>
-          Steps
-        </div>
-        <div class="fap-step-presets">
-          <button class="btn btn-secondary fap-preset-btn" onclick="return false">Major (19)</button>
-          <button class="btn btn-secondary fap-preset-btn" onclick="return false">All (35)</button>
-        </div>
-        <div class="fap-step-chips">
-          <button class="fap-step-chip major active" onclick="return false">0</button>
-          <button class="fap-step-chip major active" onclick="return false">50</button>
-          <button class="fap-step-chip major active" onclick="return false">100</button>
-          <button class="fap-step-chip" onclick="return false">110</button>
-          <button class="fap-step-chip" onclick="return false">120</button>
         </div>
       </div>
       <div class="fap-summary">
         <div class="fap-summary-line"><span class="fap-summary-count">19</span> steps &times; <span class="fap-summary-count">9</span> scales = <span class="fap-summary-count">171</span> variables</div>
-        <div class="fap-scales-list" style="margin-top:6px">
+        <div class="fap-scales-list" style="margin-block-start:6px">
           <span class="fap-scale-chip">Gray</span>
           <span class="fap-scale-chip">Red</span>
           <span class="fap-scale-chip">Blue</span>
         </div>
       </div>
       <div class="fap-actions">
-        <button class="btn btn-primary fap-push-btn" onclick="return false">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/><path d="M14 16l-2-2-2 2M12 14v6"/></svg>
-          Push to Figma
-        </button>
-        <button class="btn btn-secondary fap-curl-btn" onclick="return false">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5M12 19h8"/></svg>
-          cURL
-        </button>
+        <button class="btn btn-primary fap-push-btn" onclick="return false">Push to Figma</button>
+        <button class="btn btn-secondary fap-curl-btn" onclick="return false">cURL</button>
       </div>
     </div>
   </div>
 
-  <!-- ========== 18. ANIMATIONS ========== -->
-  <h2>18. Animations</h2>
+  <!-- ===== REFERENCE ===== -->
+  <h2 id="reference">Reference</h2>
+
+  <h3 id="animations">Animations</h3>
   <table class="token-table">
     <thead><tr><th>Name</th><th>Duration</th><th>Easing</th><th>Used By</th></tr></thead>
     <tbody>
-      <tr><td><code>@keyframes dropdownIn</code></td><td>0.12s</td><td>ease-out</td><td>Scale dropdown menu open</td></tr>
-      <tr><td><code>@keyframes sourcePanelIn</code></td><td>0.28s</td><td>cubic-bezier(0.16,1,0.3,1)</td><td>Source colors panel open</td></tr>
-      <tr><td><code>@keyframes sourcePanelOut</code></td><td>0.2s</td><td>cubic-bezier(0.4,0,0.7,0.2)</td><td>Source colors panel close</td></tr>
-      <tr><td><code>@keyframes curveSlideUp</code></td><td>0.22s</td><td>cubic-bezier(0.22,0.61,0.36,1)</td><td>Curve panel open (from bottom)</td></tr>
-      <tr><td><code>@keyframes curveSlideDown</code></td><td>0.18s</td><td>cubic-bezier(0.55,0.06,0.68,0.19)</td><td>Curve panel close</td></tr>
-      <tr><td><code>@keyframes fadeIn</code></td><td>0.15s</td><td>(default)</td><td>Modal overlay</td></tr>
-      <tr><td><code>@keyframes slideUp</code></td><td>0.2s</td><td>(default)</td><td>Modal content</td></tr>
-      <tr><td><code>@keyframes spin</code></td><td>&mdash;</td><td>linear</td><td>Spinner icon rotation</td></tr>
-      <tr><td>Theme transition</td><td>0.18s</td><td>ease</td><td>All <code>@property</code> color vars during mode switch</td></tr>
-      <tr><td>Mode slider FLIP</td><td>0.18s</td><td>cubic-bezier(0.4,0,0.2,1)</td><td>Light/dark slider position</td></tr>
-      <tr><td>Toast</td><td>0.2s</td><td>(default)</td><td>opacity + translateY on <code>.visible</code></td></tr>
+      <tr><td><code>dropdownIn</code></td><td>0.12s</td><td>ease-out</td><td>Scale dropdown</td></tr>
+      <tr><td><code>sourcePanelIn/Out</code></td><td>0.28s / 0.2s</td><td>spring / ease-in</td><td>Source panel</td></tr>
+      <tr><td><code>curveSlideUp/Down</code></td><td>0.22s / 0.18s</td><td>decelerate / accelerate</td><td>Curve panel</td></tr>
+      <tr><td><code>fadeIn</code> + <code>slideUp</code></td><td>0.15s / 0.2s</td><td>default</td><td>Modal overlay + content</td></tr>
+      <tr><td>Theme transition</td><td>0.18s</td><td>ease</td><td>All <code>@property</code> color vars</td></tr>
+      <tr><td>Mode slider FLIP</td><td>0.18s</td><td>material standard</td><td>Light/dark toggle</td></tr>
     </tbody>
   </table>
 
-  <!-- ========== 19. SEMANTIC COLOR FAMILIES ========== -->
-  <h2>19. Semantic Color Families &mdash; Scale Derivation</h2>
-  <p>All semantic accent colors are sourced from the default scales' generated steps. Each family maps to a specific scale, using step 400-500 for the main accent, step 50 for subtle backgrounds, and step 800 for text-on-subtle.</p>
-  <table class="token-table">
-    <thead><tr><th>Family</th><th>Source Scale</th><th>Main (step)</th><th>Subtle (step)</th><th>Foreground (step)</th><th>UI Role</th></tr></thead>
-    <tbody>
-      <tr>
-        <td style="font-weight:600">Warning</td>
-        <td>Yellow</td>
-        <td><span class="swatch-sm" style="background:var(--warning)"></span>300</td>
-        <td><span class="swatch-sm" style="background:var(--warning-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--warning-fg)"></span>800</td>
-        <td>A-tier contrast, gamut dot, out-of-range</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600">Info</td>
-        <td>Violet</td>
-        <td><span class="swatch-sm" style="background:var(--info)"></span>500</td>
-        <td><span class="swatch-sm" style="background:var(--info-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--info-fg)"></span>800</td>
-        <td>AA-tier contrast</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600">Positive</td>
-        <td>Aqua</td>
-        <td><span class="swatch-sm" style="background:var(--positive)"></span>400</td>
-        <td><span class="swatch-sm" style="background:var(--positive-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--positive-fg)"></span>800</td>
-        <td>AAA-tier contrast</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600">Danger</td>
-        <td>Red</td>
-        <td><span class="swatch-sm" style="background:var(--danger)"></span>450</td>
-        <td><span class="swatch-sm" style="background:var(--danger-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--danger-fg)"></span>800</td>
-        <td>Delete, fail, error toast</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600">Success</td>
-        <td>Green</td>
-        <td><span class="swatch-sm" style="background:var(--success)"></span>400</td>
-        <td><span class="swatch-sm" style="background:var(--success-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--success-fg)"></span>800</td>
-        <td>Pass indicators</td>
-      </tr>
-      <tr>
-        <td style="font-weight:600">Adjusted</td>
-        <td>Blue</td>
-        <td><span class="swatch-sm" style="background:var(--adjusted)"></span>400</td>
-        <td><span class="swatch-sm" style="background:var(--adjusted-subtle)"></span>50</td>
-        <td><span class="swatch-sm" style="background:var(--adjusted-fg)"></span>800</td>
-        <td>L-adjusted steps, Figma API info</td>
-      </tr>
-    </tbody>
-  </table>
-  <p class="note">Previously these were hardcoded Tailwind-palette hex values. Now they are all CSS custom properties registered via <code>@property</code>, using colors generated by ChromaScale's own OKLCH engine from the default scale inputs.</p>
-
-  <!-- ========== 20. COMPLETE CLASS INDEX ========== -->
-  <h2>20. Class Index</h2>
-  <p>Every CSS class used in the app, grouped by component.</p>
+  <h3 id="class-index">Class Index</h3>
   <table class="token-table" style="font-size:10px">
     <thead><tr><th>Component</th><th>Classes</th></tr></thead>
     <tbody>
-      <tr><td>Layout</td><td><code>.app-header</code> <code>.header-left</code> <code>.header-center</code> <code>.header-actions</code> <code>.scales-container</code></td></tr>
+      <tr><td>Layout</td><td><code>.app-header</code> <code>.header-left</code> <code>.header-center</code> <code>.header-actions</code> <code>.scales-wrapper</code> <code>.scales-container</code> <code>.scroll-arrow</code> <code>.scroll-arrow-left</code> <code>.scroll-arrow-right</code> <code>.scroll-sentinel</code></td></tr>
       <tr><td>Branding</td><td><code>.app-title</code> <code>.app-subtitle</code></td></tr>
-      <tr><td>Buttons</td><td><code>.btn</code> <code>.btn-primary</code> <code>.btn-secondary</code> <code>.btn-ghost</code> <code>.btn-icon-only</code> <code>.btn-icon</code> <code>.btn-sm</code> <code>.btn-close-panel</code> <code>.btn-close-modal</code> <code>.btn-more</code> <code>.btn-source-colors</code> <code>.btn-add-color</code> <code>.btn-remove-color</code> <code>.swatch-action-btn</code></td></tr>
+      <tr><td>Buttons</td><td><code>.btn</code> <code>.btn-primary</code> <code>.btn-secondary</code> <code>.btn-ghost</code> <code>.btn-icon-only</code> <code>.btn-icon</code> <code>.btn-sm</code> <code>.btn-close-panel</code> <code>.btn-close-modal</code> <code>.btn-more</code> <code>.btn-add-color</code> <code>.btn-remove-color</code> <code>.swatch-action-btn</code></td></tr>
       <tr><td>Mode Toggle</td><td><code>.mode-toggle</code> <code>.mode-slider</code> <code>.mode-btn</code> <code>.mode-icon</code> <code>.mode-icon-outline</code> <code>.mode-icon-filled</code> <code>.mode-label</code></td></tr>
-      <tr><td>Scale Column</td><td><code>.scale-column</code> <code>.selected</code> <code>.dimmed</code> <code>.source-active</code> <code>.dragging</code> <code>.drag-over-left</code> <code>.drag-over-right</code> <code>.scale-header</code> <code>.scale-name-input</code> <code>.drag-handle</code> <code>.header-badge</code> <code>.adjusted-badge</code></td></tr>
+      <tr><td>Scale Column</td><td><code>.scale-column</code> <code>.selected</code> <code>.dimmed</code> <code>.source-active</code> <code>.dragging</code> <code>.drag-over-left</code> <code>.drag-over-right</code> <code>.scale-header</code> <code>.scale-header-bar</code> <code>.scale-name-input</code> <code>.drag-handle</code> <code>.header-badge</code> <code>.adjusted-badge</code></td></tr>
       <tr><td>Scale Menu</td><td><code>.scale-more-wrap</code> <code>.scale-dropdown</code> <code>.dropdown-item</code> <code>.dropdown-item-icon</code> <code>.dropdown-item-label</code> <code>.dropdown-item-danger</code> <code>.dropdown-divider</code></td></tr>
-      <tr><td>Source Colors</td><td><code>.source-colors-wrap</code> <code>.source-swatches-row</code> <code>.source-mini-swatch</code> <code>.source-more</code> <code>.source-label</code> <code>.source-panel</code> <code>.closing</code> <code>.source-panel-content</code> <code>.source-panel-gradient</code> <code>.source-panel-middle</code> <code>.source-panel-header</code> <code>.source-panel-title</code> <code>.source-panel-list</code> <code>.source-panel-footer</code></td></tr>
+      <tr><td>Source Colors</td><td><code>.source-panel</code> <code>.closing</code> <code>.source-panel-content</code> <code>.source-panel-gradient</code> <code>.source-panel-middle</code> <code>.source-panel-header</code> <code>.source-panel-title</code> <code>.source-panel-list</code> <code>.source-panel-footer</code></td></tr>
       <tr><td>Color Inputs</td><td><code>.color-input-row</code> <code>.color-swatch-input</code> <code>.native-color-picker</code> <code>.hex-input</code> <code>.out-of-range</code> <code>.out-of-range-note</code></td></tr>
-      <tr><td>Swatch Area</td><td><code>.swatch-area</code> <code>.gradient-strip</code> <code>.swatch-list</code> <code>.swatch-row</code> <code>.minor</code> <code>.adjusted</code> <code>.swatch-color</code> <code>.gamut-dot</code> <code>.adjusted-dot</code> <code>.swatch-info</code> <code>.swatch-label-hex</code> <code>.step-label</code> <code>.hex-value</code> <code>.swatch-oklch</code> <code>.swatch-actions</code> <code>.swatch-divider</code></td></tr>
-      <tr><td>Contrast Hover</td><td><code>.contrast-hover</code> <code>.hover-source</code> <code>.contrast-a</code> <code>.contrast-aa</code> <code>.contrast-aaa</code> <code>.contrast-none</code> <code>.contrast-ratio-badge</code> <code>.contrast-zone-label</code> <code>.zone-label-a</code> <code>.zone-label-aa</code> <code>.zone-label-aaa</code></td></tr>
-      <tr><td>Tooltip</td><td><code>#shared-tooltip</code> (popover, CSS anchor positioning + JS fallback)</td></tr>
-      <tr><td>Settings</td><td><code>.settings-wrap</code> <code>.settings-popover</code> <code>.settings-popover-header</code> <code>.settings-popover-body</code> <code>.settings-row</code> <code>.settings-label</code> <code>.settings-hint</code></td></tr>
+      <tr><td>Swatch Area</td><td><code>.swatch-area</code> <code>.swatch-list</code> <code>.swatch-row</code> <code>.minor</code> <code>.swatch-overlay</code> <code>.gamut-dot</code> <code>.adjusted-dot</code> <code>.swatch-info</code> <code>.swatch-label-hex</code> <code>.step-label</code> <code>.hex-value</code> <code>.swatch-oklch</code> <code>.swatch-actions</code></td></tr>
+      <tr><td>Contrast Hover</td><td><code>.contrast-hover</code> <code>.hover-source</code> <code>.contrast-a</code> <code>.contrast-aa</code> <code>.contrast-aaa</code> <code>.contrast-none</code> <code>.contrast-ratio-badge</code> <code>.contrast-zone-pill</code> <code>.pill-tier</code> <code>.pill-ratio</code> <code>.pill-a</code> <code>.pill-aa</code> <code>.pill-aaa</code></td></tr>
+      <tr><td>Tooltip</td><td><code>#shared-tooltip</code> (CSS anchor positioning + JS fallback)</td></tr>
+      <tr><td>Settings</td><td><code>.settings-wrap</code> <code>.settings-popover</code> <code>.settings-popover-header</code> <code>.settings-popover-body</code> <code>.settings-row</code> <code>.settings-label</code> <code>.settings-hint</code> <code>.settings-warning</code></td></tr>
       <tr><td>Curve Panel</td><td><code>.curve-panel</code> <code>.closing</code> <code>.curve-panel-header</code> <code>.curve-panel-title-wrap</code> <code>.curve-panel-title</code> <code>.curve-scale-name</code> <code>.curve-panel-right</code> <code>.curve-help</code> <code>.curve-panel-content</code> <code>.curve-sidebar-wrap</code> <code>.curve-canvas-container</code> <code>.curve-canvas</code> <code>.curve-point-input</code></td></tr>
       <tr><td>Validation</td><td><code>.validation-section</code> <code>.constraint-status</code> <code>.status-badge</code> <code>.pass</code> <code>.fail</code> <code>.validation-details</code> <code>.validation-summary-row</code> <code>.validation-title</code> <code>.validation-summary</code> <code>.all-pass</code> <code>.has-fails</code> <code>.contrast-list</code> <code>.contrast-item</code> <code>.contrast-fail</code> <code>.ci-more</code> <code>.ci-pair</code> <code>.ci-ratio</code> <code>.ci-status</code> <code>.ci-pass</code> <code>.ci-fail</code></td></tr>
       <tr><td>Controls</td><td><code>.control-group</code> <code>.control-label</code> <code>.control-input</code></td></tr>
       <tr><td>Toast</td><td><code>.toast-notification</code> <code>.visible</code> <code>.toast-error</code></td></tr>
       <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code></td></tr>
       <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-sm</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-step-picker</code> <code>.fap-step-chips</code> <code>.fap-step-chip</code> <code>.fap-add-step-row</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-summary-dim</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
-      <tr><td>Dark Mode</td><td><code>body.dark-mode</code> (toggle class on <code>&lt;body&gt;</code>)</td></tr>
-      <tr><td>Theme Transition</td><td><code>:root.theme-transitioning</code> (added during mode switch, removed after 250ms)</td></tr>
+      <tr><td>Dark Mode</td><td><code>body.dark-mode</code></td></tr>
+      <tr><td>Theme Transition</td><td><code>:root.theme-transitioning</code></td></tr>
     </tbody>
   </table>
 
 </div>
+</div><!-- .ds-layout -->
 
 <!-- Populate icon grids -->
 <script src="icons.js"></script>
 <script>
-  // Render stroke icons
   const strokeGrid = document.getElementById('stroke-icons');
   Object.keys(ICON_PATHS).forEach(name => {
     const card = document.createElement('div');
@@ -885,8 +607,6 @@
     card.innerHTML = icon(name, 20) + '<code>' + name + '</code>';
     strokeGrid.appendChild(card);
   });
-
-  // Render fill icons
   const fillGrid = document.getElementById('fill-icons');
   Object.keys(ICON_FILL_PATHS).forEach(name => {
     const card = document.createElement('div');
@@ -894,20 +614,7 @@
     card.innerHTML = icon(name, 20) + '<code>' + name + '</code>';
     fillGrid.appendChild(card);
   });
-
-  // Position mode toggle slider demo
-  requestAnimationFrame(() => {
-    const toggle = document.getElementById('demo-mode-toggle');
-    const slider = document.getElementById('demo-mode-slider');
-    const activeBtn = toggle.querySelector('.mode-btn.active');
-    if (toggle && slider && activeBtn) {
-      const tRect = toggle.getBoundingClientRect();
-      const aRect = activeBtn.getBoundingClientRect();
-      slider.style.left = (aRect.left - tRect.left) + 'px';
-      slider.style.width = aRect.width + 'px';
-      slider.style.height = aRect.height + 'px';
-    }
-  });
+  // Mode slider is now positioned via CSS anchor positioning — no JS needed
 </script>
 </body>
 </html>

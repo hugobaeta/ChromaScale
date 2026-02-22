@@ -24,6 +24,9 @@ const ICON_PATHS = {
   'cloud-arrow-up': '<path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/><path d="M14 16l-2-2-2 2M12 14v6"/>',
   folders: '<path d="M20 17V7a2 2 0 00-2-2h-5l-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2z"/>',
   'sliders-horizontal': '<path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 1v6M8 9v6M16 17v6"/>',
+  palette: '<path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10a2 2 0 002-2v-.09a2 2 0 012-1.91h1.5A5.5 5.5 0 0022 12.5 10 10 0 0012 2z"/><circle cx="7.5" cy="11.5" r="1.5" fill="currentColor"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor"/><circle cx="16.5" cy="11.5" r="1.5" fill="currentColor"/>',
+  'caret-left': '<path d="M15 18l-6-6 6-6"/>',
+  'caret-right': '<path d="M9 18l6-6-6-6"/>',
 };
 
 // Dot-based icons use fill instead of stroke

@@ -206,8 +206,9 @@ class Scale {
       const contrastWhite = ColorEngine.contrastRatio(rgb, [255, 255, 255]);
       const contrastBlack = ColorEngine.contrastRatio(rgb, [0, 0, 0]);
 
-      // Step 0 is always pure white
-      if (d.label === 0) {
+      // Step 0: pure white only if lightnessMax is at 1.0
+      const lightMax = mgr ? mgr.lightnessMax : 1.0;
+      if (d.label === 0 && lightMax >= 0.999) {
         this.steps.push({
           label: 0,
           t: 0,
@@ -724,7 +725,10 @@ class ScaleManager {
   }
 
   regenerateAll() {
-    this.scales.forEach(s => s.generate());
+    this.scales.forEach(s => {
+      s._initCurves();
+      s.generate();
+    });
   }
 
   addScale(name, hexOrArray) {

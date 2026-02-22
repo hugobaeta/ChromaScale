@@ -35,8 +35,8 @@ class CurveEditor {
   }
 
   _setupCanvas() {
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '528px';
+    this.canvas.style.inlineSize = '100%';
+    this.canvas.style.blockSize = '528px';
     this.canvas.style.cursor = 'crosshair';
     this.canvas.style.borderRadius = '6px';
     this.canvas.className = 'curve-canvas';
@@ -629,8 +629,8 @@ class CurveEditor {
     input.type = 'text';
     input.className = 'curve-point-input';
     input.value = channel === 'H' ? pt.y.toFixed(1) : pt.y.toFixed(3);
-    input.style.left = px + 'px';
-    input.style.top = py + 'px';
+    input.style.insetInlineStart = px + 'px';
+    input.style.insetBlockStart = py + 'px';
 
     const commit = () => {
       const val = parseFloat(input.value);

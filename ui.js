@@ -142,21 +142,19 @@ class App {
 
   _positionModeSlider(animate = true) {
     const toggle = document.getElementById('mode-toggle');
+    if (!toggle) return;
     const slider = document.getElementById('mode-slider');
-    if (!toggle || !slider) return;
-    
-    const activeBtn = toggle.querySelector('.mode-btn.active');
-    if (!activeBtn) return;
-    
-    const toggleRect = toggle.getBoundingClientRect();
-    const activeRect = activeBtn.getBoundingClientRect();
-    
-    if (!animate) slider.style.transition = 'none';
-    slider.style.left = (activeRect.left - toggleRect.left) + 'px';
-    slider.style.width = activeRect.width + 'px';
-    slider.style.height = activeRect.height + 'px';
-    if (!animate) {
-      slider.offsetHeight; // force reflow
+    // Disable transition on initial placement
+    if (!animate && slider) {
+      slider.style.transition = 'none';
+      slider.offsetHeight;
+    }
+    // Set anchor-name on the active button so the slider tracks it via CSS anchor positioning
+    toggle.querySelectorAll('.mode-btn').forEach(b => {
+      b.style.anchorName = b.classList.contains('active') ? '--active-mode' : '';
+    });
+    if (!animate && slider) {
+      slider.offsetHeight;
       slider.style.transition = '';
     }
   }
@@ -244,6 +242,10 @@ class App {
     } catch (e) { /* ignore */ }
     
     this.manager.scales = [];
+    this.manager.lightnessMax = 1.0;
+    this.manager.lightnessMin = 0.15;
+    this.manager.darkLightnessMax = 0.95;
+    this.manager.darkLightnessMin = 0.15;
     this._loadDefaults();
     this.manager.selectedId = null;
     this._render();
@@ -312,7 +314,7 @@ class App {
       if (gradCanvas._lastSyncHeight === rounded) return;
       gradCanvas._lastSyncHeight = rounded;
       const dpr = window.devicePixelRatio || 1;
-      gradCanvas.style.height = rounded + 'px';
+      gradCanvas.style.blockSize = rounded + 'px';
       gradCanvas.height = Math.round(rounded * dpr);
       gradCanvas.width = 48 * dpr;
       const col = panel.closest('.scale-column');
@@ -342,42 +344,109 @@ class App {
       if (scale) {
         const col = document.querySelector(`.scale-column[data-scale-id="${scale.id}"]`);
         if (col) {
-          const sourceWrap = col.querySelector('.source-colors-wrap');
-          this._showSourcePopover(col, scale, sourceWrap, true);
+          this._showSourcePopover(col, scale, col.querySelector('.scale-header'), true);
+          // Focus the newly added color's hex input
+          if (this._focusNewSourceInput) {
+            const targetHex = this._focusNewSourceInput;
+            this._focusNewSourceInput = null;
+            requestAnimationFrame(() => {
+              const inputs = col.querySelectorAll('.source-panel .hex-input');
+              for (const inp of inputs) {
+                if (inp.value === targetHex.toUpperCase()) {
+                  inp.focus();
+                  inp.select();
+                  break;
+                }
+              }
+            });
+          }
         }
       }
     }
   }
 
+  _scaleCssPrefix(name) {
+    return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  // Semantic token → step mapping (gap from bg at step 0)
+  static get SEMANTIC_MAP() {
+    return [
+      ['--bg',              0],
+      ['--bg-subtle',       20],
+      ['--bg-muted',        60],
+      ['--bg-alt',          50],
+      ['--hover',           50],
+      ['--border-subtle',   150],   // 150 gap
+      ['--border',          200],   // 200 gap
+      ['--border-strong',   300],   // 300 gap
+      ['--border-hover',    400],   // 400 gap — 3:1
+      ['--text-muted',      450],   // 450 gap
+      ['--text-muted-strong', 550], // 550 gap
+      ['--text-secondary',  600],   // 600 gap
+      ['--text',            700],   // 700 gap
+      ['--accent',          850],
+      ['--accent-fg',       0],
+      ['--accent-100',      100],
+      ['--outline-active',  550],
+    ];
+  }
+
   _applyThemeFromScale() {
-    const scale = this.manager.scales[0];
-    if (!scale) return;
-    
     const root = document.documentElement;
-    const isDark = this.viewMode === 'dark';
-    
-    // Both light and dark modes use direct label mapping.
-    // Dark steps are already generated with the correct semantic meaning
-    // at each label (0 = bg, 200 = border, 850 = text, etc.)
-    const steps = isDark ? (scale.darkSteps || []) : scale.steps;
-    const stepMap = {};
-    steps.forEach(s => { stepMap[s.label] = s.hex; });
-    
-    root.style.setProperty('--bg', stepMap[0] || (isDark ? '#0f0e0d' : '#ffffff'));
-    root.style.setProperty('--bg-subtle', stepMap[20] || stepMap[0]);
-    root.style.setProperty('--bg-muted', stepMap[60] || stepMap[50]);
-    root.style.setProperty('--bg-alt', stepMap[50] || stepMap[0]);
-    root.style.setProperty('--border', stepMap[200] || stepMap[150]);
-    root.style.setProperty('--border-strong', stepMap[300] || stepMap[250]);
-    root.style.setProperty('--border-hover', stepMap[400] || stepMap[350]);
-    root.style.setProperty('--text', stepMap[850] || stepMap[900]);
-    root.style.setProperty('--text-secondary', stepMap[600] || stepMap[550]);
-    root.style.setProperty('--text-muted', stepMap[450] || stepMap[400]);
-    root.style.setProperty('--text-muted-strong', stepMap[650] || stepMap[600] || stepMap[550]);
-    root.style.setProperty('--accent', stepMap[850] || stepMap[900]);
-    root.style.setProperty('--accent-fg', stepMap[0] || (isDark ? '#0f0e0d' : '#ffffff'));
-    root.style.setProperty('--hover', stepMap[50] || stepMap[100]);
-    root.style.setProperty('--outline-active', stepMap[550] || stepMap[500] || stepMap[450]);
+    const mode = this.viewMode;
+
+    // 1. Inject all scale primitives as CSS variables via <style> element
+    let css = ':root {\n';
+    for (const scale of this.manager.scales) {
+      const prefix = this._scaleCssPrefix(scale.name);
+      const steps = scale.getSteps(mode);
+      for (const s of steps) {
+        css += `  --${prefix}-${s.label}: ${s.hex};\n`;
+      }
+    }
+    css += '}';
+
+    let styleEl = document.getElementById('chromascale-vars');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'chromascale-vars';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = css;
+
+    // 2. Wire semantic chrome tokens on :root to primary scale's primitives
+    const primary = this.manager.scales[0];
+    if (!primary) return;
+    const p = this._scaleCssPrefix(primary.name);
+
+    for (const [token, step] of App.SEMANTIC_MAP) {
+      root.style.setProperty(token, `var(--${p}-${step})`);
+    }
+
+    // 3. Map semantic role colors from named scales
+    const roles = [
+      ['danger',   /^red$/i,                     450, 50, 800],
+      ['warning',  /^(yellow|amber|orange)$/i,   300, 50, 800],
+      ['success',  /^green$/i,                   400, 50, 800],
+      ['positive', /^(aqua|teal|cyan|mint)$/i,   400, 50, 800],
+      ['info',     /^(violet|purple|indigo)$/i,  500, 50, 800],
+      ['adjusted', /^blue$/i,                    400, 50, 800],
+    ];
+
+    const matched = new Set();
+    for (const scale of this.manager.scales) {
+      const name = scale.name.trim();
+      for (const [role, pattern, mainStep, subtleStep, fgStep] of roles) {
+        if (!matched.has(role) && pattern.test(name)) {
+          const sp = this._scaleCssPrefix(name);
+          root.style.setProperty(`--${role}`,         `var(--${sp}-${mainStep})`);
+          root.style.setProperty(`--${role}-subtle`,  `var(--${sp}-${subtleStep})`);
+          root.style.setProperty(`--${role}-fg`,      `var(--${sp}-${fgStep})`);
+          matched.add(role);
+        }
+      }
+    }
   }
 
   _renderHeader() {
@@ -435,37 +504,43 @@ class App {
         const oldMode = this.viewMode;
         const newMode = btn.dataset.mode;
         if (oldMode === newMode) return;
-        
-        // Capture old slider position before re-render
-        const oldSlider = document.getElementById('mode-slider');
-        const oldLeft = oldSlider ? parseFloat(oldSlider.style.left) : 0;
-        const oldWidth = oldSlider ? parseFloat(oldSlider.style.width) : 0;
-        
+
         // Update state
         this.viewMode = newMode;
         document.body.classList.toggle('dark-mode', newMode === 'dark');
-        
+
+        // Update toggle in-place (don't re-render header — slider must persist for transition)
+        const toggle = document.getElementById('mode-toggle');
+        toggle.querySelectorAll('.mode-btn').forEach(b => {
+          const isActive = b.dataset.mode === newMode;
+          b.classList.toggle('active', isActive);
+          b.style.anchorName = isActive ? '--active-mode' : '';
+        });
+
         // Enable theme color transition on :root
         document.documentElement.classList.add('theme-transitioning');
-        
+
         if (this.curveEditor) this.curveEditor.invalidateTheme();
-        this._render();
-        
-        // FLIP: after render, the new slider exists at the NEW position.
-        // Set it to OLD position (no transition), then animate to NEW.
-        const slider = document.getElementById('mode-slider');
-        if (slider && !isNaN(oldLeft)) {
-          // Disable slider transition, jump to old position
-          slider.style.transition = 'none';
-          slider.style.left = oldLeft + 'px';
-          slider.style.width = oldWidth + 'px';
-          slider.offsetHeight; // force reflow
-          
-          // Re-enable transition and animate to new position
-          slider.style.transition = '';
-          this._positionModeSlider(true);
+
+        // Re-render scales only (preserve header)
+        const main = this.root.querySelector('.scales-wrapper');
+        if (main) main.remove();
+        const curvePanel = this.root.querySelector('.curve-panel');
+        if (curvePanel) curvePanel.remove();
+        this._applyThemeFromScale();
+        this._renderMain();
+        this._renderCurvePanel();
+        this._scheduleGradientResize();
+
+        // Re-open source panel if one was open before render
+        if (this._openSourcePanelId) {
+          const scaleObj = this.manager.scales.find(s => s.id === this._openSourcePanelId);
+          if (scaleObj) {
+            const col = this.root.querySelector(`.scale-column[data-scale-id="${scaleObj.id}"]`);
+            if (col) this._toggleSourcePanel(scaleObj, col);
+          }
         }
-        
+
         // Remove theme transition class after it finishes
         clearTimeout(this._themeTransitionTimer);
         this._themeTransitionTimer = setTimeout(() => {
@@ -505,6 +580,35 @@ class App {
     const darkWhiteLimit = this.manager.darkLightnessMax;
     const darkBlackLimit = this.manager.darkLightnessMin;
     
+    // Check all step pairs against contrast requirements using the linear L schedule
+    const rangeWarning = (lMax, lMin) => {
+      // Build linear L schedule for all steps
+      const Ls = STEP_LABELS.map(s => lMax - (lMax - lMin) * (s / 900));
+      // Find the worst failing pair (largest deficit = req - actual)
+      let worstDeficit = 0, worstRatio = 0, worstReq = 0, worstFrom = 0, worstTo = 0;
+      for (let i = 0; i < STEP_LABELS.length; i++) {
+        for (let j = i + 1; j < STEP_LABELS.length; j++) {
+          const gap = STEP_LABELS[j] - STEP_LABELS[i];
+          const req = gap >= 600 ? 7 : gap >= 500 ? 4.5 : gap >= 400 ? 3 : 0;
+          if (!req) continue;
+          const yI = Ls[i] * Ls[i] * Ls[i];
+          const yJ = Ls[j] * Ls[j] * Ls[j];
+          const ratio = (yI + 0.05) / (yJ + 0.05);
+          const deficit = req - ratio;
+          if (deficit > worstDeficit) {
+            worstDeficit = deficit;
+            worstRatio = ratio;
+            worstReq = req;
+            worstFrom = STEP_LABELS[i];
+            worstTo = STEP_LABELS[j];
+          }
+        }
+      }
+      if (worstDeficit <= 0) return '';
+      const level = worstReq >= 7 ? 'AAA (7:1)' : worstReq >= 4.5 ? 'AA (4.5:1)' : 'A (3:1)';
+      return `Steps ${worstFrom}\u2013${worstTo} only achieve ${worstRatio.toFixed(1)}:1 (needs ${worstReq}:1 for ${level}). Widen the lightness range.`;
+    };
+
     const popover = document.createElement('div');
     popover.className = 'settings-popover';
     popover.innerHTML = `
@@ -521,6 +625,7 @@ class App {
             <input type="number" class="control-input" id="settings-black-limit"
               value="${blackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
           </div>
+          <div class="settings-warning" id="settings-light-warning"></div>
         </div>
       </div>
       <div class="settings-section">
@@ -536,60 +641,56 @@ class App {
             <input type="number" class="control-input" id="settings-dark-white-limit"
               value="${darkWhiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
           </div>
+          <div class="settings-warning" id="settings-dark-warning"></div>
         </div>
       </div>
     `;
     anchor.appendChild(popover);
-    
-    // Bind change handlers
-    popover.querySelector('#settings-white-limit').addEventListener('change', (e) => {
 
-      this.manager.setLightnessMax(parseFloat(e.target.value));
-      const selected = this.manager.getSelected();
-      if (selected && this.curveEditor) {
-        this._setCurveEditorLReference();
-        this._updateConstraintBounds(selected);
-      }
-      this._render();
-      this._scheduleGradientResize();
-    });
+    const lightWarningEl = popover.querySelector('#settings-light-warning');
+    const darkWarningEl = popover.querySelector('#settings-dark-warning');
 
-    popover.querySelector('#settings-black-limit').addEventListener('change', (e) => {
+    const updateWarnings = () => {
+      const lw = rangeWarning(this.manager.lightnessMax, this.manager.lightnessMin);
+      lightWarningEl.textContent = lw;
+      lightWarningEl.hidden = !lw;
+      const dw = rangeWarning(this.manager.darkLightnessMax, this.manager.darkLightnessMin);
+      darkWarningEl.textContent = dw;
+      darkWarningEl.hidden = !dw;
+    };
+    updateWarnings();
 
-      this.manager.setLightnessMin(parseFloat(e.target.value));
-      const selected = this.manager.getSelected();
-      if (selected && this.curveEditor) {
-        this._setCurveEditorLReference();
-        this._updateConstraintBounds(selected);
-      }
-      this._render();
-      this._scheduleGradientResize();
-    });
+    // Bind input handlers — use 'input' for real-time updates (spinner, arrows, typing)
+    // Full _render() + re-open popover ensures all steps (including endpoints) update
+    const onLimitChange = (setter, inputId) => {
+      return (e) => {
+        const val = parseFloat(e.target.value);
+        if (isNaN(val)) return;
+        setter.call(this.manager, val);
+        const selected = this.manager.getSelected();
+        if (selected && this.curveEditor) {
+          this._setCurveEditorLReference();
+          this._updateConstraintBounds(selected);
+        }
+        this._render();
+        // Re-open settings popover and restore focus to the active input
+        const newAnchor = this.root.querySelector('.settings-wrap');
+        if (newAnchor) {
+          this._toggleSettingsPopover(newAnchor);
+          const inp = newAnchor.querySelector('#' + inputId);
+          if (inp) { inp.focus(); inp.select(); }
+        }
+      };
+    };
 
-    // Dark mode limit handlers
-    popover.querySelector('#settings-dark-black-limit').addEventListener('change', (e) => {
-
-      this.manager.setDarkLightnessMin(parseFloat(e.target.value));
-      const selected = this.manager.getSelected();
-      if (selected && this.curveEditor) {
-        this._setCurveEditorLReference();
-        this._updateConstraintBounds(selected);
-      }
-      this._render();
-      this._scheduleGradientResize();
-    });
-
-    popover.querySelector('#settings-dark-white-limit').addEventListener('change', (e) => {
-
-      this.manager.setDarkLightnessMax(parseFloat(e.target.value));
-      const selected = this.manager.getSelected();
-      if (selected && this.curveEditor) {
-        this._setCurveEditorLReference();
-        this._updateConstraintBounds(selected);
-      }
-      this._render();
-      this._scheduleGradientResize();
-    });
+    popover.querySelector('#settings-white-limit').addEventListener('input',
+      onLimitChange(this.manager.setLightnessMax, 'settings-white-limit'));
+    popover.querySelector('#settings-black-limit').addEventListener('input',
+      onLimitChange(this.manager.setLightnessMin, 'settings-black-limit'));
+    popover.querySelector('#settings-dark-black-limit').addEventListener('input',
+      onLimitChange(this.manager.setDarkLightnessMin, 'settings-dark-black-limit'));
+    popover.querySelector('#settings-dark-white-limit').addEventListener('input',
+      onLimitChange(this.manager.setDarkLightnessMax, 'settings-dark-white-limit'));
     
     // Close when clicking outside
     const closeOnOutside = (e) => {
@@ -601,39 +702,139 @@ class App {
     setTimeout(() => document.addEventListener('mousedown', closeOnOutside), 10);
   }
 
+  // Lightweight update: refresh swatch colors + CSS vars without rebuilding DOM
+  _refreshSwatches() {
+    const mode = this.viewMode;
+    for (const scale of this.manager.scales) {
+      const col = this.root.querySelector(`.scale-column[data-scale-id="${scale.id}"]`);
+      if (!col) continue;
+      const steps = scale.getSteps(mode);
+      const prefix = this._scaleCssPrefix(scale.name);
+      const rows = col.querySelectorAll('.swatch-row');
+      rows.forEach((row, i) => {
+        if (i >= steps.length) return;
+        const step = steps[i];
+        row.style.backgroundColor = step.hex;
+        row.dataset.hex = step.hex;
+        // Update per-row dynamic colors
+        const dir = step.label < 500 ? 1 : -1;
+        const snap = (t) => {
+          const clamped = Math.max(0, Math.min(900, t));
+          if (dir > 0) return STEP_LABELS.find(s => s >= clamped) || 900;
+          return STEP_LABELS.findLast(s => s <= clamped) || 0;
+        };
+        row.style.setProperty('--swatch-text', `var(--${prefix}-${snap(step.label + 450 * dir)})`);
+        row.style.setProperty('--swatch-text-hover', `var(--${prefix}-${snap(step.label + 600 * dir)})`);
+        row.style.setProperty('--swatch-bg-hover', `var(--${prefix}-${snap(step.label + 150 * dir)})`);
+        // Update overlay text
+        const hexEl = row.querySelector('.hex-value');
+        if (hexEl) hexEl.textContent = step.hex.toUpperCase();
+        const oklchEl = row.querySelector('.swatch-oklch');
+        if (oklchEl) oklchEl.textContent = `L${step.oklch.L.toFixed(2)} C${step.oklch.C.toFixed(3)} H${step.oklch.H.toFixed(0)}`;
+      });
+    }
+    this._applyThemeFromScale();
+  }
+
   _renderMain() {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'scales-wrapper';
+
     const main = document.createElement('div');
     main.className = 'scales-container';
-    
+
     this.manager.scales.forEach(scale => {
       const col = this._createScaleColumn(scale);
       main.appendChild(col);
     });
-    
-    this.root.appendChild(main);
+
+    wrapper.appendChild(main);
+
+    // Scroll arrow buttons
+    const leftArrow = document.createElement('button');
+    leftArrow.className = 'scroll-arrow scroll-arrow-left';
+    leftArrow.hidden = true;
+    leftArrow.innerHTML = icon('caret-left', 20);
+    wrapper.appendChild(leftArrow);
+
+    const rightArrow = document.createElement('button');
+    rightArrow.className = 'scroll-arrow scroll-arrow-right';
+    rightArrow.hidden = true;
+    rightArrow.innerHTML = icon('caret-right', 20);
+    wrapper.appendChild(rightArrow);
+
+    this.root.appendChild(wrapper);
+    this._initScrollArrows();
+  }
+
+  _initScrollArrows() {
+    const wrapper = this.root.querySelector('.scales-wrapper');
+    if (!wrapper) return;
+    const scroller = wrapper.querySelector('.scales-container');
+    const leftBtn = wrapper.querySelector('.scroll-arrow-left');
+    const rightBtn = wrapper.querySelector('.scroll-arrow-right');
+
+    // Insert sentinel elements at the edges
+    const startSentinel = document.createElement('div');
+    startSentinel.className = 'scroll-sentinel';
+    const endSentinel = document.createElement('div');
+    endSentinel.className = 'scroll-sentinel';
+    scroller.prepend(startSentinel);
+    scroller.append(endSentinel);
+
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === startSentinel) {
+          leftBtn.hidden = entry.isIntersecting;
+        }
+        if (entry.target === endSentinel) {
+          rightBtn.hidden = entry.isIntersecting;
+        }
+      }
+    }, { root: scroller, threshold: 0 });
+
+    observer.observe(startSentinel);
+    observer.observe(endSentinel);
+
+    const scrollAmount = () => {
+      const col = scroller.querySelector('.scale-column');
+      return col ? col.offsetWidth + 16 : 300;
+    };
+    leftBtn.addEventListener('click', () => {
+      scroller.scrollBy({ left: -scrollAmount(), behavior: 'smooth' });
+    });
+    rightBtn.addEventListener('click', () => {
+      scroller.scrollBy({ left: scrollAmount(), behavior: 'smooth' });
+    });
   }
 
   _createScaleColumn(scale) {
     const col = document.createElement('div');
     col.className = 'scale-column' + (scale.id === this.manager.selectedId ? ' selected' : '');
     col.dataset.scaleId = scale.id;
-    
-    // Set step 0 color for the selected column's box-shadow
-    const step0 = scale.getSteps(this.viewMode).find(s => s.label === 0);
-    if (step0) col.style.setProperty('--scale-step0', step0.hex);
-    
-    // No column-level click — graph opens via per-step button instead
+
+    // Per-column semantic overrides — scope all children to this scale's palette
+    const prefix = this._scaleCssPrefix(scale.name);
+    for (const [token, step] of App.SEMANTIC_MAP) {
+      col.style.setProperty(token, `var(--${prefix}-${step})`);
+    }
+
+    const allSteps = scale.getSteps(this.viewMode);
 
     // Scale header
     const header = document.createElement('div');
     header.className = 'scale-header';
-    
+
+    const bar = document.createElement('div');
+    bar.className = 'scale-header-bar';
+    // Background and text color come from CSS via column-scoped semantic tokens
+
     // Drag handle
     const dragHandle = document.createElement('div');
     dragHandle.className = 'drag-handle';
     dragHandle.setAttribute('data-tooltip', 'Drag to reorder');
     dragHandle.innerHTML = icon('dots-six-vertical',14);
-    header.appendChild(dragHandle);
+    bar.appendChild(dragHandle);
 
     // Pointer-based drag to reorder
     this._initColumnDrag(dragHandle, col, scale);
@@ -643,21 +844,22 @@ class App {
     nameInput.className = 'scale-name-input';
     nameInput.value = scale.name;
     nameInput.addEventListener('change', (e) => {
-
       scale.name = e.target.value;
       const panelName = document.querySelector('.curve-scale-name');
       if (panelName) panelName.textContent = scale.name;
+      // Re-render to update CSS variable prefixes for the renamed scale
+      this._render();
     });
-    header.appendChild(nameInput);
-    
+    bar.appendChild(nameInput);
+
     const validation = this.viewMode === 'dark' ? scale.getDarkContrastValidation() : scale.getContrastValidation();
     const failCount = validation.constrained.filter(v => !v.pass).length;
-    const adjustCount = scale.getSteps(this.viewMode).filter(s => s.adjusted).length;
-    
+    const adjustCount = allSteps.filter(s => s.adjusted).length;
+
     // More menu (three dots)
     const moreWrap = document.createElement('div');
     moreWrap.className = 'scale-more-wrap';
-    
+
     const moreBtn = document.createElement('button');
     moreBtn.className = 'btn-icon btn-more';
     moreBtn.setAttribute('data-tooltip', 'Scale options');
@@ -666,108 +868,80 @@ class App {
       e.stopPropagation();
       const existing = moreWrap.querySelector('.scale-dropdown');
       if (existing) { existing.remove(); moreBtn.classList.remove('active'); return; }
-      // Close any other open dropdowns and remove active state from other buttons
       document.querySelectorAll('.scale-dropdown').forEach(d => d.remove());
       document.querySelectorAll('.btn-more.active').forEach(b => b.classList.remove('active'));
       moreBtn.classList.add('active');
       this._showScaleDropdown(moreWrap, col, scale);
     });
     moreWrap.appendChild(moreBtn);
-    header.appendChild(moreWrap);
+    bar.appendChild(moreWrap);
 
+    header.appendChild(bar);
     col.appendChild(header);
 
-    // Source colors button (below header)
-    const sourceWrap = document.createElement('div');
-    sourceWrap.className = 'source-colors-wrap';
-    
-    const sourceBtn = document.createElement('button');
-    sourceBtn.className = 'btn-source-colors';
-    const previewSwatches = scale.keyColors.slice(0, 7).map(hex => 
-      `<span class="source-mini-swatch" style="background:${hex}"></span>`
-    ).join('');
-    const moreCount = scale.keyColors.length > 7 ? `<span class="source-more">+${scale.keyColors.length - 7}</span>` : '';
-    sourceBtn.innerHTML = `<span class="source-swatches-row">${previewSwatches}${moreCount}</span><span class="source-label">Source colors</span>`;
-    sourceBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const existing = col.querySelector('.source-panel');
-      if (existing) {
-        this._closeSourcePanel(existing);
-        return;
-      }
-      document.querySelectorAll('.source-panel').forEach(p => this._closeSourcePanel(p));
-      this._showSourcePopover(col, scale, sourceWrap);
-    });
-    sourceWrap.appendChild(sourceBtn);
-    
-    if (adjustCount > 0) {
-      const badge = document.createElement('span');
-      badge.className = 'header-badge adjusted-badge';
-      badge.textContent = `${adjustCount} adj`;
-      badge.setAttribute('data-tooltip', `${adjustCount} steps auto-adjusted to meet contrast constraints`);
-      sourceWrap.appendChild(badge);
-    }
-    
-    col.appendChild(sourceWrap);
-
-    // Swatch area (no gradient strip in normal view)
+    // Swatch area
     const swatchArea = document.createElement('div');
     swatchArea.className = 'swatch-area';
 
-    // Compact swatch list
+    // Swatch list — color blocks
     const swatchList = document.createElement('div');
     swatchList.className = 'swatch-list';
-    
-    const stepsToRender = scale.getSteps(this.viewMode);
-    stepsToRender.forEach((step) => {
 
-      
+    const stepsToRender = allSteps;
+
+    stepsToRender.forEach((step) => {
       const isMinor = !step.isMajor;
-      
+
       const row = document.createElement('div');
-      row.className = 'swatch-row' + (isMinor ? ' minor' : '') + (step.adjusted ? ' adjusted' : '');
+      row.className = 'swatch-row' + (isMinor ? ' minor' : '');
       row.dataset.label = step.label;
       row.dataset.hex = step.hex;
-      // No tooltip on swatch rows — hex is already visible
-      
-      const swatchColor = document.createElement('div');
-      swatchColor.className = 'swatch-color';
-      swatchColor.style.backgroundColor = step.hex;
-      
+      row.style.backgroundColor = step.hex;
+
+      // Gamut/adjusted dots positioned within the row
       if (step.clamped) {
         const warn = document.createElement('span');
         warn.className = 'gamut-dot';
         warn.setAttribute('data-tooltip', 'Gamut-clamped');
-        swatchColor.appendChild(warn);
+        row.appendChild(warn);
       }
       if (step.adjusted) {
         const adj = document.createElement('span');
         adj.className = 'adjusted-dot';
         adj.setAttribute('data-tooltip', `L adjusted: ${step.desiredL.toFixed(3)} → ${step.effectiveL.toFixed(3)}`);
-        swatchColor.appendChild(adj);
+        row.appendChild(adj);
       }
-      
+
+      // Per-row colors — offset from this swatch's step
+      const dir = step.label < 500 ? 1 : -1;
+      const snap = (t) => {
+        const clamped = Math.max(0, Math.min(900, t));
+        if (dir > 0) return STEP_LABELS.find(s => s >= clamped) || 900;
+        return STEP_LABELS.findLast(s => s <= clamped) || 0;
+      };
+      const textStep = snap(step.label + 450 * dir);
+      const textHoverStep = snap(step.label + 600 * dir);
+      const bgHoverStep = snap(step.label + 150 * dir);
+      row.style.setProperty('--swatch-text', `var(--${prefix}-${textStep})`);
+      row.style.setProperty('--swatch-text-hover', `var(--${prefix}-${textHoverStep})`);
+      row.style.setProperty('--swatch-bg-hover', `var(--${prefix}-${bgHoverStep})`);
+
+      // Overlay — visible on hover
+      const overlay = document.createElement('div');
+      overlay.className = 'swatch-overlay';
+
       const swatchInfo = document.createElement('div');
       swatchInfo.className = 'swatch-info';
-      
-      const labelHex = document.createElement('div');
-      labelHex.className = 'swatch-label-hex';
-      labelHex.innerHTML = `<span class="step-label">${step.label}</span><span class="hex-value">${step.hex.toUpperCase()}</span>`;
-      
-      swatchInfo.appendChild(labelHex);
-      
-      // Show OKLCH on major steps only (to save space)
-      if (step.isMajor) {
-        const oklchLine = document.createElement('div');
-        oklchLine.className = 'swatch-oklch';
-        oklchLine.textContent = `L${step.oklch.L.toFixed(2)} C${step.oklch.C.toFixed(3)} H${step.oklch.H.toFixed(0)}`;
-        swatchInfo.appendChild(oklchLine);
-      }
-      
-      // Hover action buttons
+
+      const labelLine = document.createElement('div');
+      labelLine.className = 'swatch-label-hex';
+      labelLine.innerHTML = `<span class="step-label">${step.label}</span><span class="swatch-oklch">L${step.oklch.L.toFixed(2)} C${step.oklch.C.toFixed(3)} H${step.oklch.H.toFixed(0)}</span>`;
+      swatchInfo.appendChild(labelLine);
+
+      // Action buttons
       const actions = document.createElement('div');
       actions.className = 'swatch-actions';
-      
+
       const copyBtn = document.createElement('button');
       copyBtn.className = 'swatch-action-btn';
       copyBtn.setAttribute('data-tooltip', 'Copy hex');
@@ -782,7 +956,7 @@ class App {
         });
       });
       actions.appendChild(copyBtn);
-      
+
       const graphBtn = document.createElement('button');
       graphBtn.className = 'swatch-action-btn';
       graphBtn.setAttribute('data-tooltip', 'Open curve editor');
@@ -792,19 +966,18 @@ class App {
         this.manager.select(scale.id);
         this._updateSelection();
         this._renderCurvePanel();
-        // Highlight this step's position on the curves
         if (this.curveEditor) {
           this.curveEditor.setHighlightT(step.t);
         }
       });
       actions.appendChild(graphBtn);
-      
-      row.appendChild(swatchColor);
-      row.appendChild(swatchInfo);
-      row.appendChild(actions);
+
+      overlay.appendChild(swatchInfo);
+      overlay.appendChild(actions);
+      row.appendChild(overlay);
       swatchList.appendChild(row);
     });
-    
+
     swatchArea.appendChild(swatchList);
     
     // Contrast hover interaction
@@ -824,15 +997,14 @@ class App {
     const items = [
       {
         label: isSourceOpen ? 'Close source colors' : 'Source colors',
-        icon: icon('grid-four',16),
+        icon: icon('palette',16),
         action: () => {
           dropdown.remove();
           // Re-check at action time since state may have changed
-          const sourceWrap = col.querySelector('.source-colors-wrap');
           const existing = col.querySelector('.source-panel:not(.closing)');
           if (existing) { this._closeSourcePanel(existing); return; }
           document.querySelectorAll('.source-panel').forEach(p => this._closeSourcePanel(p));
-          this._showSourcePopover(col, scale, sourceWrap);
+          this._showSourcePopover(col, scale, col.querySelector('.scale-header'));
         }
       },
       {
@@ -957,7 +1129,7 @@ class App {
     gradCanvas.className = 'gradient-strip source-panel-gradient';
     gradCanvas.width = 48 * dpr;
     gradCanvas.height = 100 * dpr;
-    gradCanvas.style.width = '48px';
+    gradCanvas.style.inlineSize = '48px';
     
     // Header
     const panelHeader = document.createElement('div');
@@ -983,7 +1155,8 @@ class App {
     addColorBtn.addEventListener('click', (e) => {
       e.stopPropagation();
 
-      scale.addKeyColor('#D97757');
+      scale.addKeyColor('#ffffff');
+      this._focusNewSourceInput = '#ffffff';
       this._render();
     });
     footer.appendChild(addColorBtn);
@@ -1076,7 +1249,7 @@ class App {
     requestAnimationFrame(() => {
       const h = middleRow.clientHeight - 16; // subtract 8px top + 8px bottom margin
       if (h > 0) {
-        gradCanvas.style.height = h + 'px';
+        gradCanvas.style.blockSize = h + 'px';
         gradCanvas.height = Math.round(h * dpr);
         gradCanvas.width = 48 * dpr;
         this._drawGradientStrip(gradCanvas, scale);
@@ -1109,7 +1282,59 @@ class App {
     let isDragging = false;
     let startX = 0;
     let dragScaleId = null;
-    
+    let indicator = null;
+
+    const getOrCreateIndicator = () => {
+      if (indicator) return indicator;
+      const wrapper = this.root.querySelector('.scales-wrapper');
+      if (!wrapper) return null;
+      indicator = document.createElement('div');
+      indicator.className = 'drag-indicator';
+      indicator.innerHTML = `<div class="drag-indicator-icon">${icon('plus',12)}</div><div class="drag-indicator-line"></div>`;
+      wrapper.appendChild(indicator);
+      return indicator;
+    };
+
+    const positionIndicator = (x, nearCol) => {
+      const ind = getOrCreateIndicator();
+      if (!ind) return;
+      const wrapper = this.root.querySelector('.scales-wrapper');
+      const wrapperRect = wrapper.getBoundingClientRect();
+      ind.style.insetInlineStart = (x - wrapperRect.left - 1) + 'px';
+
+      // Position icon at vertical center of the header bar
+      const bar = nearCol.querySelector('.scale-header-bar');
+      const swatchArea = nearCol.querySelector('.swatch-area');
+      const iconEl = ind.querySelector('.drag-indicator-icon');
+      const lineEl = ind.querySelector('.drag-indicator-line');
+      if (bar) {
+        const barRect = bar.getBoundingClientRect();
+        const barMidY = barRect.top + barRect.height / 2 - wrapperRect.top;
+        iconEl.style.insetBlockStart = barMidY + 'px';
+      }
+      if (swatchArea) {
+        const saRect = swatchArea.getBoundingClientRect();
+        lineEl.style.insetBlockStart = (saRect.top - wrapperRect.top) + 'px';
+        lineEl.style.insetBlockEnd = (wrapperRect.bottom - saRect.bottom) + 'px';
+      }
+
+      ind.style.blockSize = wrapperRect.height + 'px';
+      ind.classList.add('visible');
+    };
+
+    const hideIndicator = () => {
+      if (indicator) {
+        indicator.classList.remove('visible');
+      }
+    };
+
+    const removeIndicator = () => {
+      if (indicator) {
+        indicator.remove();
+        indicator = null;
+      }
+    };
+
     const onPointerDown = (e) => {
       e.preventDefault();
       isDragging = true;
@@ -1120,40 +1345,51 @@ class App {
       document.body.style.cursor = 'grabbing';
       document.body.style.userSelect = 'none';
     };
-    
+
     const onPointerMove = (e) => {
       if (!isDragging) return;
-      // Highlight drop target
-      document.querySelectorAll('.scale-column').forEach(c => {
-        c.classList.remove('drag-over', 'drag-over-left', 'drag-over-right');
-        if (c === col) return;
+      // Find the gap to show the indicator in
+      const allCols = [...document.querySelectorAll('.scale-column')];
+      let bestGapX = null;
+      let nearCol = null;
+
+      for (let i = 0; i < allCols.length; i++) {
+        const c = allCols[i];
+        if (c === col) continue;
         const rect = c.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right) {
-          c.classList.add('drag-over');
+          nearCol = c;
           const midX = rect.left + rect.width / 2;
           if (e.clientX < midX) {
-            c.classList.add('drag-over-left');
+            bestGapX = rect.left - 8;
           } else {
-            c.classList.add('drag-over-right');
+            bestGapX = rect.right + 8;
           }
+          break;
         }
-      });
+      }
+
+      if (bestGapX !== null && nearCol) {
+        positionIndicator(bestGapX, nearCol);
+      } else {
+        hideIndicator();
+      }
     };
-    
+
     const onPointerUp = (e) => {
       if (!isDragging) return;
       isDragging = false;
       col.classList.remove('dragging');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      
+      removeIndicator();
+
       // Find which column we're over
       const allCols = [...document.querySelectorAll('.scale-column')];
       let targetCol = null;
       let insertAfter = false;
-      
+
       allCols.forEach(c => {
-        c.classList.remove('drag-over', 'drag-over-left', 'drag-over-right');
         if (c === col) return;
         const rect = c.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right) {
@@ -1191,11 +1427,11 @@ class App {
       col.classList.remove('contrast-hover');
       rows.forEach(r => {
         r.classList.remove('hover-source', 'contrast-a', 'contrast-aa', 'contrast-aaa', 'contrast-none');
+        r.style.removeProperty('--hover-outline');
         const badge = r.querySelector('.contrast-ratio-badge');
         if (badge) badge.remove();
-        const zoneLabel = r.querySelector('.contrast-zone-label');
-        if (zoneLabel) zoneLabel.remove();
       });
+      col.querySelectorAll('.contrast-zone-pill').forEach(p => p.remove());
     };
 
     rows.forEach(sourceRow => {
@@ -1208,10 +1444,14 @@ class App {
         col.classList.add('contrast-hover');
         sourceRow.classList.add('hover-source');
 
-        // Track zone boundaries for labels
-        let firstA = null, firstAup = null;
-        let firstAA = null, firstAAup = null;
-        let firstAAA = null, firstAAAup = null;
+        // Outline color: +200 steps, snapped to nearest available step at or above
+        const prefix = this._scaleCssPrefix(scale.name);
+        const target = Math.min(sourceLabel + 200, 900);
+        const outlineStep = STEP_LABELS.find(s => s >= target) || 900;
+        sourceRow.style.setProperty('--hover-outline', `var(--${prefix}-${outlineStep})`);
+
+        // Track rows per tier for pill creation
+        const tierRows = { a: [], aa: [], aaa: [] };
 
         rows.forEach(targetRow => {
           if (targetRow === sourceRow) return;
@@ -1219,23 +1459,19 @@ class App {
           const targetLabel = parseInt(targetRow.dataset.label);
           const targetHex = targetRow.dataset.hex;
           const gap = Math.abs(targetLabel - sourceLabel);
+          const signedGap = targetLabel - sourceLabel;
           const ratio = this._computeContrastFromHex(sourceHex, targetHex);
-          const isAbove = targetLabel < sourceLabel;
 
-          // Determine tier from gap
           let tierClass;
           if (gap >= 600) {
             tierClass = 'contrast-aaa';
-            if (!isAbove && (!firstAAA || targetLabel < parseInt(firstAAA.dataset.label))) firstAAA = targetRow;
-            if (isAbove && (!firstAAAup || targetLabel > parseInt(firstAAAup.dataset.label))) firstAAAup = targetRow;
+            tierRows.aaa.push(targetRow);
           } else if (gap >= 500) {
             tierClass = 'contrast-aa';
-            if (!isAbove && (!firstAA || targetLabel < parseInt(firstAA.dataset.label))) firstAA = targetRow;
-            if (isAbove && (!firstAAup || targetLabel > parseInt(firstAAup.dataset.label))) firstAAup = targetRow;
+            tierRows.aa.push(targetRow);
           } else if (gap >= 400) {
             tierClass = 'contrast-a';
-            if (!isAbove && (!firstA || targetLabel < parseInt(firstA.dataset.label))) firstA = targetRow;
-            if (isAbove && (!firstAup || targetLabel > parseInt(firstAup.dataset.label))) firstAup = targetRow;
+            tierRows.a.push(targetRow);
           } else {
             tierClass = 'contrast-none';
           }
@@ -1243,22 +1479,81 @@ class App {
           targetRow.classList.add(tierClass);
           const badge = document.createElement('span');
           badge.className = 'contrast-ratio-badge';
-          badge.textContent = `${ratio.toFixed(1)}:1`;
+          badge.textContent = `${signedGap > 0 ? '+' : ''}${signedGap} \u00B7 ${ratio.toFixed(1)}:1`;
+          // Badge colors relative to the target swatch: 700 jump for text, 200 jump for bg
+          const dir = targetLabel < 500 ? 1 : -1;
+          const snapStep = (t) => {
+            const c = Math.max(0, Math.min(900, t));
+            if (dir > 0) return STEP_LABELS.find(s => s >= c) || 900;
+            return STEP_LABELS.findLast(s => s <= c) || 0;
+          };
+          badge.style.color = `var(--${prefix}-${snapStep(targetLabel + 700 * dir)})`;
+          badge.style.backgroundColor = `var(--${prefix}-${snapStep(targetLabel + 100 * dir)})`;
           targetRow.appendChild(badge);
         });
 
-        // Add zone boundary labels at the first row of each zone
-        const addZoneLabel = (row, text, cls) => {
-          if (!row) return;
-          const label = document.createElement('span');
-          label.className = 'contrast-zone-label ' + cls;
-          label.textContent = text;
-          row.appendChild(label);
+        // Create vertical pills for each tier, splitting non-contiguous groups
+        const rowIndexMap = new Map();
+        rows.forEach((r, i) => rowIndexMap.set(r, i));
+
+        // Pills are appended to the column (not swatch-list) to avoid overflow clipping
+        const swatchArea = col.querySelector('.swatch-area');
+        const areaRect = swatchArea.getBoundingClientRect();
+        const colRect = col.getBoundingClientRect();
+        const areaOffsetTop = areaRect.top - colRect.top;
+        const scrollTop = swatchArea.scrollTop;
+
+        // Source row position relative to column (for pill text alignment)
+        const sourceTop = sourceRow.offsetTop - scrollTop + areaOffsetTop;
+        const sourceBottom = sourceTop + sourceRow.offsetHeight;
+
+        const addPills = (tRows, tierLabel, ratioLabel, cls) => {
+          if (tRows.length === 0) return;
+          // Split into contiguous groups (adjacent in the DOM)
+          const groups = [[tRows[0]]];
+          for (let i = 1; i < tRows.length; i++) {
+            const prevIdx = rowIndexMap.get(tRows[i - 1]);
+            const currIdx = rowIndexMap.get(tRows[i]);
+            if (currIdx - prevIdx > 1) {
+              groups.push([tRows[i]]);
+            } else {
+              groups[groups.length - 1].push(tRows[i]);
+            }
+          }
+          for (const group of groups) {
+            const first = group[0];
+            const last = group[group.length - 1];
+            // Position relative to the column, accounting for swatch area offset and scroll
+            const top = first.offsetTop - scrollTop + areaOffsetTop;
+            const bottom = last.offsetTop + last.offsetHeight - scrollTop + areaOffsetTop;
+            // Clip to swatch area visible bounds
+            const visibleTop = Math.max(top, areaOffsetTop);
+            const visibleBottom = Math.min(bottom, areaOffsetTop + swatchArea.clientHeight);
+            if (visibleBottom <= visibleTop) return; // fully scrolled out
+            const pill = document.createElement('div');
+            pill.className = 'contrast-zone-pill ' + cls;
+            pill.style.top = visibleTop + 'px';
+            pill.style.height = (visibleBottom - visibleTop) + 'px';
+            // Align text to the edge closest to the hover source
+            // vertical writing-mode: justify-content = inline (vertical) axis
+            // After 180deg rotation: flex-end = visual top, flex-start = visual bottom
+            const isBelow = top >= sourceBottom;
+            pill.style.justifyContent = isBelow ? 'flex-end' : 'flex-start';
+            const tierSpan = document.createElement('span');
+            tierSpan.className = 'pill-tier';
+            tierSpan.textContent = tierLabel;
+            const ratioSpan = document.createElement('span');
+            ratioSpan.className = 'pill-ratio';
+            ratioSpan.textContent = '\u00B7 ' + ratioLabel;
+            pill.appendChild(tierSpan);
+            pill.appendChild(ratioSpan);
+            col.appendChild(pill);
+          }
         };
 
-        addZoneLabel(firstA || firstAup, 'A ≥3:1', 'zone-label-a');
-        addZoneLabel(firstAA || firstAAup, 'AA ≥4.5:1', 'zone-label-aa');
-        addZoneLabel(firstAAA || firstAAAup, 'AAA ≥7:1', 'zone-label-aaa');
+        addPills(tierRows.a, 'A', '\u22653:1', 'pill-a');
+        addPills(tierRows.aa, 'AA', '\u22654.5:1', 'pill-aa');
+        addPills(tierRows.aaa, 'AAA', '\u22657:1', 'pill-aaa');
       });
 
       sourceRow.addEventListener('mouseleave', () => {
