@@ -14,7 +14,7 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 | File | Purpose |
 |------|---------|
 | `index.html` | Entry point — loads all scripts and mounts `#app` |
-| `style.css` | Complete stylesheet (~1,570 lines) with CSS custom properties for theming |
+| `style.css` | Complete stylesheet (~1,700 lines) with CSS custom properties, logical properties for theming |
 | `icons.js` | Inline SVG icon library (24 icons, zero dependencies) |
 | `color-engine.js` | OKLCH ↔ sRGB color pipeline, contrast ratios, gamut clamping, spline interpolation |
 | `curve-editor.js` | Canvas-based L/C/H curve editor with interactive point manipulation |
@@ -39,43 +39,48 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 #### Layout
 - **Full viewport height**, `display: flex; flex-direction: column`
 - **Header bar**: 40px tall, fixed at top, `justify-content: space-between`
-- **Scales container**: `display: flex; overflow-x: scroll; flex: 1` — horizontally scrollable columns
+- **Scales container**: `display: flex; overflow-x: auto; flex: 1` with `scroll-snap-type: x mandatory`, `scroll-padding-inline: 32px`, hidden scrollbar — horizontally scrollable columns with snap
+- **Scales wrapper**: Wraps the container + left/right scroll arrow buttons (positioned absolutely with gradient fade backgrounds, shown/hidden via IntersectionObserver)
 - **Curve panel** (when open): Docked to bottom, `max-height: 44vh`, slides up with animation
 
 #### Header
 - **Left**: App title "ChromaScale" (14px, weight 700, letter-spacing -0.02em) + subtitle "OKLCH color scale tool" (11px, `--text-muted`)
-- **Center**: Light/Dark mode toggle — pill-shaped toggle with sliding background indicator. Uses `border-radius: 8px` container, 2px padding, `--bg-muted` background. Active tab has a sliding white/dark pill (`box-shadow: 0 1px 3px rgba(0,0,0,0.08)`)
+- **Center**: Light/Dark mode toggle — segmented control with CSS Anchor Positioning. Container: `border-radius: 8px`, 2px padding, `--bg-muted` background. Active button sets `style.anchorName = '--active-mode'` via JS; slider uses `position-anchor: --active-mode` with `anchor(top)`, `anchor(left)`, `anchor-size(width/height)` and CSS transitions for smooth animated movement. Active state: filled icon, `font-weight: 600`. Dark mode slider: `--bg-alt` with stronger shadow.
 - **Right**: Action buttons — "Add scale" (secondary), Settings gear (icon-only), Save (floppy disk icon), Reset (counter-clockwise arrow icon), "Export" (primary, accent-colored)
 
 #### Scale Columns
-- **Min-width**: 240px, `flex: 1 0 240px`
-- **Border-right**: `1px solid var(--border)`
-- **Hover**: Background changes to `var(--hover)` (very subtle tint)
+- **Min-width**: 270px, `flex: 1 0 270px`, `scroll-snap-align: start`
+- **Border-radius**: 8px, no border-right (gap handles separation)
 - **Selected state**: `border-radius: 12px`, `box-shadow: 0 0 0 8px var(--scale-step0), inset 0 0 0 2px var(--outline-active)`, padding: 2px, z-index: 2
 - **Dimmed state** (when another column is selected): `opacity: 0.35`, hover → 0.55
 
 Each column contains:
 
-1. **Column Header** (scale name)
-   - Drag handle: 6-dot vertical grip icon (20×24px), `cursor: grab`, color `--text-muted`
-   - Editable name input: 13px, weight 600, transparent background until focused
-   - Three-dot menu button: opens dropdown with Source Colors, Curve Editor, Duplicate, Delete options
+1. **Scale Header Bar** (colored)
+   - `.scale-header-bar` div with `background-color` set to the scale's step-50 hex
+   - `border-radius: 8px`, `padding: 4px`, subtle inset border via `box-shadow`
+   - Drag handle: 6-dot vertical grip icon (14px), `cursor: grab`
+   - Editable name input: transparent background, no border, blends into colored bar, 12px weight 500
+   - Three-dot menu button: 16×16 icon in 24×24 hit area
 
-2. **Source Colors Bar**
-   - Row of mini color swatches (8×8px, border-radius 2px) showing key colors
-   - "Source colors" label (10px, weight 500, `--text-muted`)
-   - Optional "N adj" badge if steps were auto-adjusted
+2. **Source colors**: No longer shown in column body. Access via "..." dropdown menu → "Source colors" item, which opens the source panel overlay.
 
-3. **Swatch List** (scrollable, fills remaining column height)
-   - **Major steps** (0, 50, 100, 150…900): `min-height: 32px`, shows:
-     - Color swatch: 26×26px, border-radius 6px, 1px border
-     - Step label: 10px, weight 600, tabular-nums, 28px wide
-     - Hex value: 10px mono, `--text-muted`
-     - OKLCH values: 8px mono, `--text-muted` (format: `L0.95 C0.007 H98`)
-   - **Minor steps** (10, 20, 30…): `min-height: 16px, max-height: 20px`, smaller swatches (12×12px), left-padded 22px, no OKLCH line
-   - **Hover actions** (appear on row hover, fade in): Copy hex button, Open curve editor button (14px icons)
-   - **Gamut-clamped indicator**: Orange dot (6px) top-right of swatch
-   - **Adjusted indicator**: Blue dot (6px) bottom-right of swatch, light blue row background
+3. **Swatch List** (fills remaining column height, `padding: 2px` for hover outline breathing room)
+   - **Color-block default**: Each swatch row IS the color — `background-color` set directly on `.swatch-row`, no separate `.swatch-color` child
+   - **Major steps**: `flex: 1` (tall), **Minor steps**: `flex: 0.55` (shorter)
+   - `border-radius: 2px`, `1px` gap between rows, no padding/text by default
+   - **Gamut-clamped indicator**: Orange dot (6px) at inline-start (left side)
+   - **Adjusted indicator**: Blue dot (6px) at inline-start, below gamut dot
+
+   **On hover — inline overlay** (`.swatch-overlay`):
+   - Absolutely positioned over the row, `opacity: 0 → 1` with 0.12s transition
+   - Shows: step label + OKLCH values (format: `L0.95 C0.007 H98`), copy button, curve editor button
+   - **No scrim** — text color picked from scale's own endpoints (step-0 or step-900) based on which has better contrast against the swatch color, ensuring AA compliance
+   - `pointer-events: none` by default, `auto` on hover
+
+   **Hover-source outline** (contrast visualization):
+   - `box-shadow: 0 0 0 2px var(--hover-outline)` with `transition: box-shadow 0.1s cubic-bezier(0.2, 0, 0, 1)`
+   - Visible outside swatch bounds (no clipping)
 
 ### 2. Source Colors Panel (Overlay)
 **Purpose**: Edit the key/source colors that define a scale's curve.
@@ -189,7 +194,7 @@ Each column contains:
 
 ### Light/Dark Mode Toggle
 - **Transition**: CSS custom properties transition over 0.18s (using `@property` for animatable colors). The `theme-transitioning` class is added temporarily.
-- **Slider animation**: FLIP technique — captures old position, renders new state, animates from old to new position via CSS `transition` on `left` and `width`.
+- **Slider animation**: CSS Anchor Positioning — active button gets `style.anchorName = '--active-mode'` via JS. Slider uses `position-anchor: --active-mode` with `top: anchor(top)`, `left: anchor(left)`, `width: anchor-size(width)`, `height: anchor-size(height)`. CSS transitions on all four properties (0.18s cubic-bezier) create smooth movement. Header DOM is preserved across mode switches (only scales re-render) so the slider element persists for transition continuity.
 - **Theme application**: First scale's step values are mapped to semantic CSS variables:
   - Step 0 → `--bg`
   - Step 50 → `--bg-subtle`, `--hover`
@@ -342,10 +347,11 @@ Tooltip: 12px, weight 500, letter-spacing 0.005em
 ### Spacing
 ```
 Header padding: 8px 20px
-Scale column min-width: 240px
-Swatch row padding: 2px 8px (major), 1px 8px 1px 22px (minor)
-Swatch row min-height: 32px (major), 16px (minor, max 20px)
-Swatch color: 26×26px (major), 12×12px (minor)
+Scale column min-width: 270px
+Scales container gap: 16px, padding: 16px 32px
+Swatch rows: no padding (full-width color blocks), flex: 1 (major) / 0.55 (minor)
+Swatch list gap: 1px, padding: 2px (hover outline breathing room)
+Swatch overlay padding: 0 8px
 Curve panel padding: 10px 20px 14px
 Curve canvas height: 220px
 Validation sidebar width: 200px
@@ -380,8 +386,8 @@ box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.06);
 /* Dark mode: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border) */
 
 /* Mode slider */
-box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
-/* Dark mode: 0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px var(--border) */
+box-shadow: 0 1px 4px rgba(22,21,20,0.12);
+/* Dark mode: 0 1px 6px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.08) */
 
 /* Buttons (layered) */
 box-shadow:
@@ -418,8 +424,8 @@ dropdownIn: 0.12s ease-out — translateY(-4px) scale(0.97) → identity, opacit
 fadeIn: 0.15s — opacity 0→1
 slideUp: 0.2s — translateY(8px) → 0, opacity 0→1
 
-/* Mode slider */
-transition: left 0.18s cubic-bezier(0.4, 0, 0.2, 1), width 0.18s cubic-bezier(0.4, 0, 0.2, 1)
+/* Mode slider (CSS Anchor Positioning) */
+transition: top/left/width/height 0.18s cubic-bezier(0.4, 0, 0.2, 1), background/box-shadow 0.18s ease
 
 /* Button hover */
 box-shadow: ease-in-out 100ms
@@ -525,3 +531,9 @@ All design/implementation files are included in this handoff package:
 6. **Canvas DPR handling**: All canvas operations scale by `window.devicePixelRatio` for crisp rendering on Retina displays.
 
 7. **`@property` for theme transitions**: CSS `@property` declarations register custom properties with `<color>` syntax so they can be smoothly transitioned. The `theme-transitioning` class is temporarily added during mode switches.
+
+8. **CSS Logical Properties**: The codebase uses logical properties (`inline-size`, `block-size`, `inset-block-start`, `margin-inline`, `padding-block`, etc.) for writing-mode-aware layout. Exceptions: `overflow-x`/`overflow-y` (limited browser support for logical equivalents), contrast pill positioning via JS (`.style.top`/`.style.height`), and elements in `writing-mode: vertical-lr` where axis-swapping makes logical properties counterintuitive.
+
+9. **CSS Anchor Positioning for mode toggle**: The light/dark slider uses `position-anchor`/`anchor()`/`anchor-size()` to track the active button. The active button's `style.anchorName` is set via JS. Header DOM is preserved across mode switches so the slider persists for CSS transition continuity.
+
+10. **Scroll-snap with IntersectionObserver arrows**: Scale columns use `scroll-snap-align: start`. Sentinel elements at container edges are observed to show/hide gradient-faded arrow buttons.

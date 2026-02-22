@@ -5,6 +5,7 @@ OKLCH color scale generator with built-in WCAG contrast constraint enforcement.
 ## Features
 
 - **35-step color scales** (0–900) for light and dark modes
+- **Color-first presentation** — swatches are full-width color blocks; step labels and OKLCH values appear on hover
 - **Uniform lightness across scales** — shared linear L schedule means same step = same perceived brightness, regardless of hue
 - **WCAG contrast guarantees** — A (3:1), AA (4.5:1), AAA (7:1) enforced automatically
 - **Interactive curve editor** — adjust Chroma and Hue via Catmull-Rom splines (Lightness is a fixed linear schedule displayed as a reference line)
@@ -12,7 +13,9 @@ OKLCH color scale generator with built-in WCAG contrast constraint enforcement.
 - **Gamut clamping** — out-of-sRGB colors are clamped while preserving hue
 - **Self-theming UI** — the app themes itself using your first scale's colors
 - **Export formats** — CSS custom properties, JSON, W3C Design Tokens, direct Figma API push
-- **Light/dark mode** with smooth animated transitions
+- **Light/dark mode** with CSS Anchor Positioning animated toggle
+- **Horizontal scroll-snap** with arrow navigation for scale columns
+- **CSS logical properties** throughout for modern, writing-mode-aware layout
 
 ## Quick Start
 
