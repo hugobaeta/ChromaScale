@@ -1837,69 +1837,107 @@ class App {
   _showExportModal() {
     const existing = document.querySelector('.modal-overlay');
     if (existing) existing.remove();
-    
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-    
+
     const modal = document.createElement('div');
     modal.className = 'modal';
-    
-    const cssOutput = this.manager.exportAllCSS();
-    const jsonOutput = this.manager.exportAllJSON();
-    const figmaOutput = this.manager.exportFigmaTokens();
-    
+
+    const copyIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>';
+    const checkIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const downloadIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+    const labelMap = { css: 'Copy CSS', 'w3c': 'Copy Tokens', tailwind: 'Copy Tailwind' };
+    const downloadLabelMap = { css: 'Download CSS', 'w3c': 'Download Tokens', tailwind: 'Download Tailwind' };
+    const fileNameMap = { css: 'colors.css', 'w3c': 'design-tokens.json', tailwind: 'tailwind-colors' };
+    const mimeMap = { css: 'text/css', 'w3c': 'application/json', tailwind: 'text/plain' };
+
+    const getModeOpts = () => ({
+      light: modal.querySelector('#export-light').checked,
+      dark: modal.querySelector('#export-dark').checked
+    });
+
+    const getTailwindVersion = () => modal.querySelector('#tailwind-version')?.value || 'v4';
+
+    const getContent = (key) => {
+      const opts = getModeOpts();
+      if (key === 'css') return this.manager.exportAllCSS(opts);
+      if (key === 'w3c') return this.manager.exportW3CTokens(opts);
+      if (key === 'tailwind') {
+        return getTailwindVersion() === 'v3'
+          ? this.manager.exportTailwindV3(opts)
+          : this.manager.exportTailwindV4(opts);
+      }
+      return '';
+    };
+
+    const refreshContent = () => {
+      modal.querySelectorAll('.export-section[data-panel]').forEach(panel => {
+        const key = panel.dataset.panel;
+        if (key === 'figma-api') return;
+        const pre = panel.querySelector('.export-code');
+        if (pre) pre.textContent = getContent(key);
+      });
+    };
+
     modal.innerHTML = `
       <div class="modal-header">
         <h2 class="modal-title">Export scales</h2>
+        <div class="export-mode-toggles">
+          <label class="export-mode-toggle"><input type="checkbox" id="export-light" checked> Light</label>
+          <label class="export-mode-toggle"><input type="checkbox" id="export-dark" checked> Dark</label>
+        </div>
         <button class="btn-icon btn-close-modal">
           ${icon('x',16)}
         </button>
       </div>
       <div class="modal-tabs">
         <button class="modal-tab active" data-tab="css">CSS</button>
-        <button class="modal-tab" data-tab="json">JSON</button>
-        <button class="modal-tab" data-tab="figma-json">Figma JSON</button>
+        <button class="modal-tab" data-tab="w3c">W3C Design Tokens</button>
+        <button class="modal-tab" data-tab="tailwind">Tailwind</button>
         <button class="modal-tab" data-tab="figma-api">Figma API</button>
       </div>
       <div class="modal-body">
         <div class="export-section" data-panel="css">
-          <pre class="export-code">${this._escapeHtml(cssOutput)}</pre>
+          <pre class="export-code"></pre>
           <div class="export-actions">
             <button class="btn btn-secondary btn-copy-full" data-content="css">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-              Copy CSS
+              ${copyIconSvg} Copy CSS
             </button>
             <button class="btn btn-secondary btn-download" data-download="css">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download CSS
+              ${downloadIconSvg} Download CSS
             </button>
           </div>
         </div>
-        <div class="export-section" data-panel="json" style="display:none">
-          <pre class="export-code">${this._escapeHtml(jsonOutput)}</pre>
-          <div class="export-actions">
-            <button class="btn btn-secondary btn-copy-full" data-content="json">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-              Copy JSON
-            </button>
-            <button class="btn btn-secondary btn-download" data-download="json">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download JSON
-            </button>
-          </div>
-        </div>
-        <div class="export-section" data-panel="figma-json" style="display:none">
+        <div class="export-section" data-panel="w3c" style="display:none">
           <p class="export-note">W3C Design Tokens format: compatible with <strong>Tokens Studio for Figma</strong> and variables import plugins.</p>
-          <pre class="export-code">${this._escapeHtml(figmaOutput)}</pre>
+          <pre class="export-code"></pre>
           <div class="export-actions">
-            <button class="btn btn-secondary btn-copy-full" data-content="figma-json">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-              Copy Figma Tokens
+            <button class="btn btn-secondary btn-copy-full" data-content="w3c">
+              ${copyIconSvg} Copy Tokens
             </button>
-            <button class="btn btn-secondary btn-download" data-download="figma-json">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Download Figma JSON
+            <button class="btn btn-secondary btn-download" data-download="w3c">
+              ${downloadIconSvg} Download Tokens
+            </button>
+          </div>
+        </div>
+        <div class="export-section" data-panel="tailwind" style="display:none">
+          <div class="export-version-selector">
+            <label for="tailwind-version">Tailwind version:</label>
+            <select id="tailwind-version" class="export-select">
+              <option value="v4" selected>v4 (CSS-based)</option>
+              <option value="v3">v3 (JS config)</option>
+            </select>
+          </div>
+          <pre class="export-code"></pre>
+          <div class="export-actions">
+            <button class="btn btn-secondary btn-copy-full" data-content="tailwind">
+              ${copyIconSvg} Copy Tailwind
+            </button>
+            <button class="btn btn-secondary btn-download" data-download="tailwind">
+              ${downloadIconSvg} Download Tailwind
             </button>
           </div>
         </div>
@@ -1908,15 +1946,39 @@ class App {
         </div>
       </div>
     `;
-    
+
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    
+
+    // Initial content render
+    refreshContent();
+
+    // Mode toggles refresh all panels
+    modal.querySelectorAll('.export-mode-toggle input').forEach(cb => {
+      cb.addEventListener('change', () => {
+        // Prevent unchecking both
+        const lightCb = modal.querySelector('#export-light');
+        const darkCb = modal.querySelector('#export-dark');
+        if (!lightCb.checked && !darkCb.checked) {
+          cb.checked = true;
+          return;
+        }
+        refreshContent();
+      });
+    });
+
+    // Tailwind version selector refreshes tailwind panel
+    modal.querySelector('#tailwind-version')?.addEventListener('change', () => {
+      const pre = modal.querySelector('[data-panel="tailwind"] .export-code');
+      if (pre) pre.textContent = getContent('tailwind');
+    });
+
     modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
     document.addEventListener('keydown', function escHandler(e) {
       if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
     });
-    
+
+    // Tab switching
     modal.querySelectorAll('.modal-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         modal.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
@@ -1925,36 +1987,33 @@ class App {
         modal.querySelector(`[data-panel="${tab.dataset.tab}"]`).style.display = '';
       });
     });
-    
-    const contentMap = { css: cssOutput, json: jsonOutput, 'figma-json': figmaOutput };
-    const copyIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="4.5" y="4.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M9.5 4.5V3a1.5 1.5 0 0 0-1.5-1.5H3A1.5 1.5 0 0 0 1.5 3v5A1.5 1.5 0 0 0 3 9.5h1.5" stroke="currentColor" stroke-width="1.2"/></svg>';
-    const checkIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2.5 7.5l3 3 6-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const downloadIconSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1.5v8m0 0L4 6.5m3 3 3-3M2 11.5h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const labelMap = { css: 'Copy CSS', json: 'Copy JSON', 'figma-json': 'Copy Figma Tokens' };
-    const downloadLabelMap = { css: 'Download CSS', json: 'Download JSON', 'figma-json': 'Download Figma JSON' };
-    const fileNameMap = { css: 'colors.css', json: 'colors.json', 'figma-json': 'figma-colors.json' };
-    const mimeMap = { css: 'text/css', json: 'application/json', 'figma-json': 'application/json' };
-    
+
+    // Copy buttons
     modal.querySelectorAll('.btn-copy-full').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.content;
-        const content = contentMap[key];
+        const content = getContent(key);
         navigator.clipboard.writeText(content).then(() => {
           btn.innerHTML = checkIconSvg + ' Copied!';
           setTimeout(() => { btn.innerHTML = copyIconSvg + ' ' + labelMap[key]; }, 1500);
         });
       });
     });
-    
+
+    // Download buttons
     modal.querySelectorAll('.btn-download').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.download;
-        const content = contentMap[key];
+        const content = getContent(key);
+        let fileName = fileNameMap[key];
+        if (key === 'tailwind') {
+          fileName += getTailwindVersion() === 'v3' ? '.js' : '.css';
+        }
         const blob = new Blob([content], { type: mimeMap[key] });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileNameMap[key];
+        a.download = fileName;
         a.click();
         URL.revokeObjectURL(url);
         btn.innerHTML = checkIconSvg + ' Downloaded!';
@@ -1973,12 +2032,10 @@ class App {
       }
     };
 
-    // Check if figma-api tab is already active (it won't be by default)
     modal.querySelectorAll('.modal-tab').forEach(tab => {
-      const origHandler = () => {
+      tab.addEventListener('click', () => {
         if (tab.dataset.tab === 'figma-api') initFigmaApi();
-      };
-      tab.addEventListener('click', origHandler);
+      });
     });
   }
 

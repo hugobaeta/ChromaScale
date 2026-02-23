@@ -12,7 +12,7 @@ OKLCH color scale generator with built-in WCAG contrast constraint enforcement.
 - **Multiple source colors** per scale with automatic curve fitting
 - **Gamut clamping** — out-of-sRGB colors are clamped while preserving hue
 - **Self-theming UI** — the app themes itself using your first scale's colors
-- **Export formats** — CSS custom properties, JSON, W3C Design Tokens, direct Figma API push
+- **Export formats** — CSS custom properties, W3C Design Tokens, Tailwind (v3 + v4), direct Figma API push — with independent light/dark mode toggles
 - **Light/dark mode** with CSS Anchor Positioning animated toggle
 - **Horizontal scroll-snap** with arrow navigation for scale columns
 - **CSS logical properties** throughout for modern, writing-mode-aware layout

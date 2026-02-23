@@ -838,18 +838,32 @@ class ScaleManager {
     this.selectedId = config.selectedId;
   }
 
-  exportAllCSS() {
-    const lightVars = this.scales.map(s => {
-      const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      return s.steps.map(st => `  --${prefix}-${st.label}: ${st.hex};`).join('\n');
-    }).join('\n\n');
+  exportAllCSS({ light = true, dark = true } = {}) {
+    const parts = [];
 
-    const darkVars = this.scales.map(s => {
-      const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      return (s.darkSteps || []).map(st => `  --${prefix}-${st.label}: ${st.hex};`).join('\n');
-    }).join('\n\n');
+    if (light) {
+      const lightVars = this.scales.map(s => {
+        const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        return s.steps.map(st => `  --${prefix}-${st.label}: ${st.hex};`).join('\n');
+      }).join('\n\n');
+      parts.push(`:root {\n${lightVars}\n}`);
+    }
 
-    return `:root {\n${lightVars}\n}\n\n[data-theme="dark"],\n.dark {\n${darkVars}\n}\n\n@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {\n${darkVars}\n  }\n}`;
+    if (dark) {
+      const darkVars = this.scales.map(s => {
+        const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        return (s.darkSteps || []).map(st => `  --${prefix}-${st.label}: ${st.hex};`).join('\n');
+      }).join('\n\n');
+
+      if (light) {
+        parts.push(`[data-theme="dark"],\n.dark {\n${darkVars}\n}`);
+        parts.push(`@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {\n${darkVars}\n  }\n}`);
+      } else {
+        parts.push(`:root {\n${darkVars}\n}`);
+      }
+    }
+
+    return parts.join('\n\n');
   }
 
   exportAllJSON() {
@@ -861,30 +875,84 @@ class ScaleManager {
     return JSON.stringify(result, null, 2);
   }
 
-  exportFigmaTokens() {
-    const tokens = { light: {}, dark: {} };
+  exportW3CTokens({ light = true, dark = true } = {}) {
+    const bothModes = light && dark;
+    const tokens = bothModes ? { light: {}, dark: {} } : {};
+
+    const makeGroup = (steps) => {
+      const group = {};
+      steps.forEach(step => {
+        group[step.label] = {
+          "$value": step.hex,
+          "$type": "color",
+          "$description": `oklch(${step.oklch.L.toFixed(3)} ${step.oklch.C.toFixed(3)} ${step.oklch.H.toFixed(1)})`
+        };
+      });
+      return group;
+    };
+
     this.scales.forEach(s => {
       const key = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      const lightGroup = {};
-      const darkGroup = {};
-      s.steps.forEach(step => {
-        lightGroup[step.label] = {
-          "$value": step.hex,
-          "$type": "color",
-          "$description": `oklch(${step.oklch.L.toFixed(3)} ${step.oklch.C.toFixed(3)} ${step.oklch.H.toFixed(1)})`
-        };
-      });
-      (s.darkSteps || []).forEach(step => {
-        darkGroup[step.label] = {
-          "$value": step.hex,
-          "$type": "color",
-          "$description": `oklch(${step.oklch.L.toFixed(3)} ${step.oklch.C.toFixed(3)} ${step.oklch.H.toFixed(1)})`
-        };
-      });
-      tokens.light[key] = lightGroup;
-      tokens.dark[key] = darkGroup;
+      if (bothModes) {
+        tokens.light[key] = makeGroup(s.steps);
+        tokens.dark[key] = makeGroup(s.darkSteps || []);
+      } else if (light) {
+        tokens[key] = makeGroup(s.steps);
+      } else {
+        tokens[key] = makeGroup(s.darkSteps || []);
+      }
     });
     return JSON.stringify(tokens, null, 2);
+  }
+
+  exportTailwindV3({ light = true, dark = true } = {}) {
+    const colors = {};
+    this.scales.forEach(s => {
+      const key = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const scale = {};
+      if (light && !dark) {
+        s.steps.forEach(st => { scale[st.label] = st.hex; });
+      } else if (dark && !light) {
+        (s.darkSteps || []).forEach(st => { scale[st.label] = st.hex; });
+      } else {
+        // Both: use CSS variables so dark mode can override
+        s.steps.forEach(st => { scale[st.label] = `var(--${key}-${st.label})`; });
+      }
+      colors[key] = scale;
+    });
+
+    const obj = { theme: { extend: { colors } } };
+    return '// tailwind.config.js\nmodule.exports = ' + JSON.stringify(obj, null, 2);
+  }
+
+  exportTailwindV4({ light = true, dark = true } = {}) {
+    const parts = [];
+
+    if (light) {
+      const vars = this.scales.map(s => {
+        const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        return s.steps.map(st => `  --color-${prefix}-${st.label}: ${st.hex};`).join('\n');
+      }).join('\n\n');
+      parts.push(`@theme {\n${vars}\n}`);
+    }
+
+    if (dark) {
+      if (light) {
+        const darkVars = this.scales.map(s => {
+          const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+          return (s.darkSteps || []).map(st => `    --color-${prefix}-${st.label}: ${st.hex};`).join('\n');
+        }).join('\n\n');
+        parts.push(`@variant dark {\n  @theme {\n${darkVars}\n  }\n}`);
+      } else {
+        const darkVars = this.scales.map(s => {
+          const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+          return (s.darkSteps || []).map(st => `  --color-${prefix}-${st.label}: ${st.hex};`).join('\n');
+        }).join('\n\n');
+        parts.push(`@theme {\n${darkVars}\n}`);
+      }
+    }
+
+    return parts.join('\n\n');
   }
 }
 

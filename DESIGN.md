@@ -1,7 +1,7 @@
 # Handoff: ChromaScale — OKLCH Color Scale Tool
 
 ## Overview
-ChromaScale is a professional-grade color scale generation tool built on the OKLCH color space. It enables designers to create perceptually uniform color palettes with built-in WCAG contrast constraint enforcement. The tool generates stepped scales from 0 to 900 for both light and dark modes, with interactive curve editing, source color management, gamut clamping, and multiple export formats including CSS custom properties, JSON, W3C Design Tokens, and direct Figma API push.
+ChromaScale is a professional-grade color scale generation tool built on the OKLCH color space. It enables designers to create perceptually uniform color palettes with built-in WCAG contrast constraint enforcement. The tool generates stepped scales from 0 to 900 for both light and dark modes, with interactive curve editing, source color management, gamut clamping, and multiple export formats including CSS custom properties, W3C Design Tokens, Tailwind (v3/v4), and direct Figma API push — with independent light/dark mode toggles.
 
 ## Fidelity
 **High-fidelity (hifi)** — This is a fully functional, production-quality tool. The mockup represents the final design with exact colors, typography, spacing, interactions, and behavior. The developer should recreate the UI pixel-perfectly using the codebase's existing libraries and patterns.
@@ -152,17 +152,23 @@ Each column contains:
 - **Zone labels**: Tiny uppercase labels ("A ≥3:1", "AA ≥4.5:1", "AAA ≥7:1") at zone boundaries
 
 ### 5. Export Modal
-**Purpose**: Export scales in multiple formats.
+**Purpose**: Export scales in multiple formats with independent light/dark mode control.
 
 #### Layout
 - **Overlay**: `position: fixed; inset: 0`, backdrop: `rgba(0,0,0,0.35)` + `blur(3px)`
 - **Modal**: 580px wide, centered, `border-radius: 16px`, max-height 80vh
-- **Tabs**: CSS | JSON | Figma JSON | Figma API
+- **Header**: Title + light/dark checkboxes (both checked by default) + close button
+- **Tabs**: CSS | W3C Design Tokens | Tailwind | Figma API
+
+#### Light/Dark Mode Toggles
+- Two checkboxes in the modal header: "Light" and "Dark", both pre-selected
+- Unchecking a mode removes it from all export outputs; at least one must remain checked
+- When only one mode is selected, the output structure flattens (no light/dark wrapper)
 
 #### Tabs
-1. **CSS**: Shows `:root { --prefix-step: hex }` with dark mode media queries. Copy + Download buttons.
-2. **JSON**: Nested `{ light: { step: { hex, oklch, rgb } }, dark: {...} }`. Copy + Download.
-3. **Figma JSON**: W3C Design Tokens format for Tokens Studio. Copy + Download.
+1. **CSS**: Shows `:root { --prefix-step: hex }` with dark mode selectors and media queries when both modes are selected. Single-mode: flat `:root` block. Copy + Download buttons.
+2. **W3C Design Tokens**: DTCG format (`$value`, `$type`, `$description`) for Tokens Studio and variables import plugins. Both modes: `{ light: {...}, dark: {...} }`. Single mode: flat `{ scaleName: {...} }`. Copy + Download.
+3. **Tailwind**: Version selector dropdown (v4 CSS-based / v3 JS config). v4 outputs `@theme { --color-prefix-step }` with `@variant dark` nesting. v3 outputs `module.exports = { theme: { extend: { colors } } }` with CSS variable references (both modes) or raw hex (single mode). Copy + Download.
 4. **Figma API**: Full Figma Variables push panel:
    - Personal Access Token input (password field with toggle visibility)
    - File URL/key input with live key extraction preview

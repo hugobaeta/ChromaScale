@@ -451,29 +451,40 @@
     <div class="modal" style="position:relative;inline-size:100%;max-inline-size:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
       <div class="modal-header">
         <h2 class="modal-title">Export scales</h2>
+        <div class="export-mode-toggles">
+          <label class="export-mode-toggle"><input type="checkbox" checked> Light</label>
+          <label class="export-mode-toggle"><input type="checkbox" checked> Dark</label>
+        </div>
         <button class="btn-icon btn-close-modal" onclick="return false">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
       <div class="modal-tabs">
         <button class="modal-tab active">CSS</button>
-        <button class="modal-tab">JSON</button>
-        <button class="modal-tab">Figma JSON</button>
+        <button class="modal-tab">W3C Design Tokens</button>
+        <button class="modal-tab">Tailwind</button>
         <button class="modal-tab">Figma API</button>
       </div>
       <div class="modal-body">
-        <pre class="export-code" style="max-block-size:60px">:root {
-  --gray-0: #FAF9F5;
-  --gray-50: #F5F4ED;
+        <div class="export-version-selector">
+          <label for="tw-version-demo">Tailwind version:</label>
+          <select id="tw-version-demo" class="export-select">
+            <option value="v4" selected>v4 (CSS-based)</option>
+            <option value="v3">v3 (JS config)</option>
+          </select>
+        </div>
+        <pre class="export-code" style="max-block-size:60px">@theme {
+  --color-gray-0: #FAF9F5;
+  --color-gray-50: #F5F4ED;
   /* ... */
 }</pre>
         <div class="export-actions">
-          <button class="btn btn-secondary" onclick="return false">Copy CSS</button>
-          <button class="btn btn-secondary" onclick="return false">Download CSS</button>
+          <button class="btn btn-secondary" onclick="return false">Copy Tailwind</button>
+          <button class="btn btn-secondary" onclick="return false">Download Tailwind</button>
         </div>
       </div>
     </div>
-    <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span></div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> (<span class="cls">.export-mode-toggles</span>) + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span> (<span class="cls">.export-version-selector</span>)</div>
   </div>
 
   <h3 id="toast">Toast</h3>
@@ -587,7 +598,7 @@
       <tr><td>Validation</td><td><code>.validation-section</code> <code>.constraint-status</code> <code>.status-badge</code> <code>.pass</code> <code>.fail</code> <code>.validation-details</code> <code>.validation-summary-row</code> <code>.validation-title</code> <code>.validation-summary</code> <code>.all-pass</code> <code>.has-fails</code> <code>.contrast-list</code> <code>.contrast-item</code> <code>.contrast-fail</code> <code>.ci-more</code> <code>.ci-pair</code> <code>.ci-ratio</code> <code>.ci-status</code> <code>.ci-pass</code> <code>.ci-fail</code></td></tr>
       <tr><td>Controls</td><td><code>.control-group</code> <code>.control-label</code> <code>.control-input</code></td></tr>
       <tr><td>Toast</td><td><code>.toast-notification</code> <code>.visible</code> <code>.toast-error</code></td></tr>
-      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code></td></tr>
+      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.export-mode-toggles</code> <code>.export-mode-toggle</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-select</code></td></tr>
       <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-sm</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-step-picker</code> <code>.fap-step-chips</code> <code>.fap-step-chip</code> <code>.fap-add-step-row</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-summary-dim</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
       <tr><td>Dark Mode</td><td><code>body.dark-mode</code></td></tr>
       <tr><td>Theme Transition</td><td><code>:root.theme-transitioning</code></td></tr>

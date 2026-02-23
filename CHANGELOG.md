@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.1.0] — 2026-02-23
+
+### Added
+- **Dark-mode chroma boost**: Automatic chroma compensation (up to 1.3×) for gamut narrowing at dark lightness levels, keeping dark swatches more vibrant
+- **`maxChroma()` in ColorEngine**: Binary-search utility for finding peak in-gamut chroma at a given lightness and hue
+- **Tailwind export tab**: Generates Tailwind-ready color config with a version selector for v4 (CSS `@theme` blocks) and v3 (JS `tailwind.config.js`)
+- **Light/dark mode toggles in export modal**: Independent checkboxes to include or exclude each mode from all export formats; structure flattens when only one mode is selected
+
+### Changed
+- **Renamed "Figma JSON" tab → "W3C Design Tokens"**: Same DTCG format, clearer naming
+- **Removed JSON export tab**: Redundant with W3C Design Tokens and CSS exports
+- **Export functions accept mode options**: `exportAllCSS()`, `exportW3CTokens()`, `exportTailwindV3()`, `exportTailwindV4()` all accept `{ light, dark }` flags
+
 ## [3.0.0] — 2026-02-22
 
 ### Changed — UI Redesign
@@ -51,7 +64,7 @@
 - Initial release with OKLCH color engine, 35-step scales, WCAG contrast enforcement
 - Interactive Catmull-Rom curve editor for L/C/H
 - Light and dark mode with animated transitions
-- Export: CSS custom properties, JSON, W3C Design Tokens, Figma API push
+- Export: CSS custom properties, W3C Design Tokens, Tailwind, Figma API push
 - Unit tests (node:test) for color-engine, scale-manager
 - CSS Anchor Positioning tooltip fallback for older browsers
 - Self-theming UI using first scale's colors
