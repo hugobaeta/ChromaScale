@@ -253,6 +253,25 @@ class Scale {
     const mgr = this.manager;
 
     // Dark mode: use linear L schedule directly (increasing from darkLightnessMin to darkLightnessMax)
+    // Compute a per-scale chroma boost factor to compensate for gamut narrowing
+    // where the chroma curve peaks. We weight each step by curve chroma so the
+    // boost reflects the deficit AT the most saturated steps (not the average).
+    let sumWtLight = 0, sumWtDark = 0;
+    for (let i = 0; i < numSteps; i++) {
+      const step = STEP_LABELS[i];
+      const t = step / 900;
+      const cVal = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
+      const H = ColorEngine.interpolateHue(this.curvePoints.H, t);
+      const hue = ((H % 360) + 360) % 360;
+      const lightL = mgr ? mgr.getLinearL(step) : (1.0 - (1.0 - 0.15) * t);
+      const darkL = mgr ? mgr.getDarkLinearL(step) : (0.15 + (0.95 - 0.15) * t);
+      sumWtLight += cVal * ColorEngine.maxChroma(Math.max(0, Math.min(1, lightL)), hue);
+      sumWtDark += cVal * ColorEngine.maxChroma(Math.max(0, Math.min(1, darkL)), hue);
+    }
+    const wtGamutRatio = sumWtLight > 0 ? sumWtDark / sumWtLight : 1;
+    // Boost = inverse of deficit, capped at 30% amplification
+    const darkChromaBoost = Math.min(Math.max(1, 1 / wtGamutRatio), 1.3);
+
     const desiredDark = [];
     for (let i = 0; i < numSteps; i++) {
       const step = STEP_LABELS[i];
@@ -260,11 +279,12 @@ class Scale {
       const L = mgr ? mgr.getDarkLinearL(step) : (0.15 + (0.95 - 0.15) * t);
       const C = ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t);
       const H = ColorEngine.interpolateHue(this.curvePoints.H, t);
+
       desiredDark.push({
         label: step,
         t,
         desiredL: Math.max(0, Math.min(1, L)),
-        C: Math.max(0, C),
+        C: Math.max(0, C) * darkChromaBoost,
         H: ((H % 360) + 360) % 360
       });
     }
@@ -620,10 +640,26 @@ class Scale {
     const lightHex = ColorEngine.oklchToHex(lightGamut.L, lightGamut.C, lightGamut.H);
     const lightRgb = ColorEngine.hexToRgb(lightHex);
 
-    // Dark mode — linear L
+    // Dark mode — linear L with uniform chroma boost
     const darkL = mgr ? mgr.getDarkLinearL(label) : (0.15 + (0.95 - 0.15) * t);
-    const darkC = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
+    let darkC = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
     const darkH = ((ColorEngine.interpolateHue(this.curvePoints.H, t) % 360) + 360) % 360;
+
+    // Chroma-weighted per-scale boost (same logic as _generateDarkMode)
+    const numSteps = STEP_LABELS.length;
+    let sWtLight = 0, sWtDark = 0;
+    for (let si = 0; si < numSteps; si++) {
+      const st = STEP_LABELS[si] / 900;
+      const cVal = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, st));
+      const sH = ((ColorEngine.interpolateHue(this.curvePoints.H, st) % 360) + 360) % 360;
+      const sLL = mgr ? mgr.getLinearL(STEP_LABELS[si]) : (1.0 - (1.0 - 0.15) * st);
+      const sDL = mgr ? mgr.getDarkLinearL(STEP_LABELS[si]) : (0.15 + (0.95 - 0.15) * st);
+      sWtLight += cVal * ColorEngine.maxChroma(Math.max(0, Math.min(1, sLL)), sH);
+      sWtDark += cVal * ColorEngine.maxChroma(Math.max(0, Math.min(1, sDL)), sH);
+    }
+    const ratio = sWtLight > 0 ? sWtDark / sWtLight : 1;
+    const boost = Math.min(Math.max(1, 1 / ratio), 1.3);
+    darkC *= boost;
 
     const darkGamut = ColorEngine.clampToGamut(Math.max(0, Math.min(1, darkL)), darkC, darkH);
     const darkHex = ColorEngine.oklchToHex(darkGamut.L, darkGamut.C, darkGamut.H);

@@ -222,6 +222,18 @@ const ColorEngine = (() => {
     return result;
   }
 
+  // === Max chroma at given L and H ===
+  function maxChroma(L, H) {
+    if (L <= 0 || L >= 1) return 0;
+    let lo = 0, hi = 0.4;
+    for (let i = 0; i < 20; i++) {
+      const mid = (lo + hi) / 2;
+      if (isInGamut(L, mid, H)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  }
+
   // === Public API ===
   return {
     hexToRgb,
@@ -231,6 +243,7 @@ const ColorEngine = (() => {
     oklchToRgb,
     isInGamut,
     clampToGamut,
+    maxChroma,
     relativeLuminance,
     contrastRatio,
     cubicHermiteInterpolate,
