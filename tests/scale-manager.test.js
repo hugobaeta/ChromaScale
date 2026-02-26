@@ -5,22 +5,117 @@ const ColorEngine = require('../color-engine.js');
 // Make ColorEngine available globally (Scale/ScaleManager reference it as a global)
 globalThis.ColorEngine = ColorEngine;
 
-const { Scale, ScaleManager, STEP_LABELS, MAJOR_STEPS, getRequiredRatio } = require('../scale-manager.js');
+const {
+  Scale, ScaleManager, getRequiredRatio,
+  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels
+} = require('../scale-manager.js');
 
-describe('STEP_LABELS', () => {
+describe('DEFAULT_STEP_LABELS', () => {
   it('has exactly 35 entries', () => {
-    assert.equal(STEP_LABELS.length, 35);
+    assert.equal(DEFAULT_STEP_LABELS.length, 35);
   });
 
   it('starts at 0 and ends at 900', () => {
-    assert.equal(STEP_LABELS[0], 0);
-    assert.equal(STEP_LABELS[STEP_LABELS.length - 1], 900);
+    assert.equal(DEFAULT_STEP_LABELS[0], 0);
+    assert.equal(DEFAULT_STEP_LABELS[DEFAULT_STEP_LABELS.length - 1], 900);
   });
 
   it('is sorted ascending', () => {
-    for (let i = 1; i < STEP_LABELS.length; i++) {
-      assert.ok(STEP_LABELS[i] > STEP_LABELS[i - 1]);
+    for (let i = 1; i < DEFAULT_STEP_LABELS.length; i++) {
+      assert.ok(DEFAULT_STEP_LABELS[i] > DEFAULT_STEP_LABELS[i - 1]);
     }
+  });
+});
+
+describe('parseStepLabels', () => {
+  it('parses comma-separated integers', () => {
+    assert.deepEqual(parseStepLabels('0, 100, 500, 900'), [0, 100, 500, 900]);
+  });
+
+  it('handles mixed whitespace and commas', () => {
+    assert.deepEqual(parseStepLabels('0  100,500\n900'), [0, 100, 500, 900]);
+  });
+
+  it('sorts and de-dupes', () => {
+    assert.deepEqual(parseStepLabels('900, 0, 500, 0, 100'), [0, 100, 500, 900]);
+  });
+
+  it('rejects missing 0', () => {
+    assert.throws(() => parseStepLabels('100, 900'), /start at 0/);
+  });
+
+  it('rejects missing 900', () => {
+    assert.throws(() => parseStepLabels('0, 500'), /end at 900/);
+  });
+
+  it('rejects non-integers and out-of-range', () => {
+    assert.throws(() => parseStepLabels('0, 1.5, 900'), /integer/i);
+    assert.throws(() => parseStepLabels('0, 1000'), /0.*900/);
+    assert.throws(() => parseStepLabels('0, -50, 900'), /0.*900/);
+  });
+
+  it('rejects empty', () => {
+    assert.throws(() => parseStepLabels(''), /no steps/i);
+  });
+});
+
+describe('ScaleManager step config', () => {
+  it('defaults to DEFAULT_STEP_LABELS and divisor 50', () => {
+    const mgr = new ScaleManager();
+    assert.deepEqual(mgr.stepLabels, DEFAULT_STEP_LABELS);
+    assert.equal(mgr.majorDivisor, 50);
+  });
+
+  it('setSteps + regenerate changes step count', () => {
+    const mgr = new ScaleManager();
+    mgr.addScale('Blue', '#3b82f6');
+    mgr.setSteps('0, 100, 200, 300, 400, 500, 600, 700, 800, 900');
+    mgr.regenerateAll();
+    assert.equal(mgr.scales[0].steps.length, 10);
+    assert.deepEqual(mgr.scales[0].steps.map(s => s.label), [0,100,200,300,400,500,600,700,800,900]);
+  });
+
+  it('isMajor respects divisor', () => {
+    const mgr = new ScaleManager();
+    mgr.setMajorDivisor(100);
+    assert.ok(mgr.isMajor(0));
+    assert.ok(mgr.isMajor(100));
+    assert.ok(!mgr.isMajor(50));
+    assert.ok(!mgr.isMajor(150));
+  });
+
+  it('snapStep finds nearest defined step', () => {
+    const mgr = new ScaleManager();
+    mgr.setSteps([0, 100, 500, 900]);
+    assert.equal(mgr.snapStep(250, 1), 500);  // ceil
+    assert.equal(mgr.snapStep(250, -1), 100); // floor
+    assert.equal(mgr.snapStep(100, 1), 100);  // exact
+    assert.equal(mgr.snapStep(950, 1), 900);  // clamp
+    assert.equal(mgr.snapStep(-5, -1), 0);    // clamp
+  });
+
+  it('toConfig/fromConfig round-trips step config', () => {
+    const mgr = new ScaleManager();
+    mgr.addScale('X', '#888888');
+    mgr.setSteps('0, 50, 500, 850, 900');
+    mgr.setMajorDivisor(25);
+    const cfg = mgr.toConfig();
+
+    const mgr2 = new ScaleManager();
+    mgr2.fromConfig(cfg);
+    assert.deepEqual(mgr2.stepLabels, [0, 50, 500, 850, 900]);
+    assert.equal(mgr2.majorDivisor, 25);
+    assert.equal(mgr2.scales[0].steps.length, 5);
+  });
+
+  it('fromConfig without step fields uses defaults', () => {
+    const mgr = new ScaleManager();
+    mgr.fromConfig({
+      lightnessMax: 1, lightnessMin: 0.15,
+      scales: [{ name: 'X', keyColors: ['#888888'] }]
+    });
+    assert.deepEqual(mgr.stepLabels, DEFAULT_STEP_LABELS);
+    assert.equal(mgr.majorDivisor, DEFAULT_MAJOR_DIVISOR);
   });
 });
 
@@ -60,11 +155,11 @@ describe('Scale generation', () => {
     assert.equal(s.steps[0].label, 0);
   });
 
-  it('step labels match STEP_LABELS', () => {
+  it('step labels match manager.stepLabels', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Red', '#ef4444');
     const labels = s.steps.map(st => st.label);
-    assert.deepEqual(labels, STEP_LABELS);
+    assert.deepEqual(labels, mgr.stepLabels);
   });
 
   it('steps have monotonically decreasing L', () => {

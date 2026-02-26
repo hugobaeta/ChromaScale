@@ -1,15 +1,35 @@
 // ChromaScale — Scale Manager v3
 // 35-step scales with uniform linear lightness and contrast constraint enforcement
 
-// Full step labels: 10s at ends, 50s in the middle
-const STEP_LABELS = [
+// Default step labels: 10s at ends, 50s in the middle
+const DEFAULT_STEP_LABELS = [
   0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
   150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750,
   800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900
 ];
 
-// Which steps are "major" (50-intervals) vs "minor" (10-intervals)
-const MAJOR_STEPS = new Set([0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900]);
+// Default divisor: any label divisible by this is "major"
+const DEFAULT_MAJOR_DIVISOR = 50;
+
+// Parse a comma/space-separated list of step labels, validate, and return
+// a sorted unique array. Throws on invalid input.
+// Rules: integers, ascending, must start at 0 and end at 900, at least 2 steps.
+function parseStepLabels(input) {
+  const raw = String(input).split(/[,\s]+/).filter(Boolean);
+  if (raw.length === 0) throw new Error('No steps provided');
+  const nums = raw.map(s => {
+    const n = Number(s);
+    if (!Number.isInteger(n) || n < 0 || n > 900) {
+      throw new Error(`Invalid step "${s}" (must be integer 0–900)`);
+    }
+    return n;
+  });
+  const uniq = [...new Set(nums)].sort((a, b) => a - b);
+  if (uniq[0] !== 0) throw new Error('Steps must start at 0');
+  if (uniq[uniq.length - 1] !== 900) throw new Error('Steps must end at 900');
+  if (uniq.length < 2) throw new Error('Need at least 2 steps');
+  return uniq;
+}
 
 // Contrast requirement for a given step gap
 // Thresholds are the tightest gaps that achieve each WCAG level across the full
@@ -169,13 +189,14 @@ class Scale {
   }
 
   generate() {
-    const numSteps = STEP_LABELS.length;
     const mgr = this.manager;
+    const stepLabels = mgr ? mgr.stepLabels : DEFAULT_STEP_LABELS;
+    const numSteps = stepLabels.length;
 
     // Step 1: Sample desired L (linear), C, H
     const desired = [];
     for (let i = 0; i < numSteps; i++) {
-      const step = STEP_LABELS[i];
+      const step = stepLabels[i];
       const t = step / 900;
       const L = mgr ? mgr.getLinearL(step) : (1.0 - (1.0 - 0.15) * t);
       const C = ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t);
@@ -221,7 +242,7 @@ class Scale {
           adjusted: false,
           contrastWhite: 1,
           contrastBlack: 21,
-          isMajor: MAJOR_STEPS.has(0)
+          isMajor: mgr ? mgr.isMajor(0) : true
         });
       } else {
         this.steps.push({
@@ -236,7 +257,7 @@ class Scale {
           adjusted: wasAdjusted,
           contrastWhite,
           contrastBlack,
-          isMajor: MAJOR_STEPS.has(d.label)
+          isMajor: mgr ? mgr.isMajor(d.label) : (d.label % DEFAULT_MAJOR_DIVISOR === 0)
         });
       }
     }
@@ -454,6 +475,10 @@ class ScaleManager {
     // Global lightness limits (shared by all scales)
     this.lightnessMax = 1.0;       // step 0
     this.lightnessMin = 0.15;      // step 900
+
+    // Step generation schedule (per-set; persisted)
+    this.stepLabels = [...DEFAULT_STEP_LABELS];
+    this.majorDivisor = DEFAULT_MAJOR_DIVISOR;
   }
 
   // Linear L schedule: step 0 = lightnessMax, step 900 = lightnessMin
@@ -469,6 +494,35 @@ class ScaleManager {
   setLightnessMin(val) {
     this.lightnessMin = Math.max(0, Math.min(0.5, val));
     this.regenerateAll();
+  }
+
+  isMajor(label) {
+    return label % this.majorDivisor === 0;
+  }
+
+  // Snap a label value to the nearest *defined* step in the given direction.
+  // dir > 0 → nearest step at or above; dir < 0 → nearest step at or below.
+  snapStep(target, dir = 1) {
+    const c = Math.max(0, Math.min(900, target));
+    if (dir > 0) return this.stepLabels.find(s => s >= c) ?? 900;
+    return this.stepLabels.findLast(s => s <= c) ?? 0;
+  }
+
+  majorSteps() {
+    return this.stepLabels.filter(s => this.isMajor(s));
+  }
+
+  // Set steps from a raw string or pre-validated array. Throws on invalid.
+  // Does NOT regenerate — call regenerateAll() after if needed.
+  setSteps(labelsOrString) {
+    this.stepLabels = Array.isArray(labelsOrString)
+      ? parseStepLabels(labelsOrString.join(','))
+      : parseStepLabels(labelsOrString);
+  }
+
+  setMajorDivisor(d) {
+    if (![10, 25, 50, 100].includes(d)) throw new Error('Divisor must be 10, 25, 50, or 100');
+    this.majorDivisor = d;
   }
 
   regenerateAll() {
@@ -524,6 +578,8 @@ class ScaleManager {
     return {
       lightnessMax: this.lightnessMax,
       lightnessMin: this.lightnessMin,
+      stepLabels: [...this.stepLabels],
+      majorDivisor: this.majorDivisor,
       scales: this.scales.map(s => s.toConfig()),
       selectedId: this.selectedId
     };
@@ -536,6 +592,12 @@ class ScaleManager {
 
     if (config.lightnessMin != null) this.lightnessMin = config.lightnessMin;
     else if (config.blackLimit != null) this.lightnessMin = config.blackLimit;
+
+    // Steps (default to module constants if absent — supports pre-v4 configs)
+    this.stepLabels = Array.isArray(config.stepLabels) && config.stepLabels.length >= 2
+      ? [...config.stepLabels]
+      : [...DEFAULT_STEP_LABELS];
+    this.majorDivisor = config.majorDivisor ?? DEFAULT_MAJOR_DIVISOR;
 
     this.scales = config.scales.map(c => Scale.fromConfig(c, this));
     this.selectedId = config.selectedId;
@@ -596,4 +658,7 @@ class ScaleManager {
   }
 }
 
-if (typeof module !== 'undefined') module.exports = { Scale, ScaleManager, STEP_LABELS, MAJOR_STEPS, getRequiredRatio };
+if (typeof module !== 'undefined') module.exports = {
+  Scale, ScaleManager, getRequiredRatio,
+  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels
+};

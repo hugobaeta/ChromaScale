@@ -8,14 +8,11 @@ class FigmaPusher {
     this.STORAGE_KEY_COLLECTION = 'chromascale-figma-collection';
     this.STORAGE_KEY_STEPS = 'chromascale-figma-steps';
 
-    // Step presets
-    this.MAJOR_STEPS = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900];
-    this.ALL_STEPS = [
-      0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
-      150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750,
-      800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900
-    ];
   }
+
+  // Step presets sourced from the live manager (respects per-set step config)
+  _majorSteps(mgr) { return mgr.majorSteps(); }
+  _allSteps(mgr) { return [...mgr.stepLabels]; }
 
   // Extract file key from URL or raw key
   parseFileKey(input) {
@@ -135,10 +132,14 @@ class FigmaPusher {
     container.innerHTML = '';
     container.className = 'figma-api-panel';
 
+    // Step presets from the live manager (respects per-set step config)
+    const MAJOR = this._majorSteps(manager);
+    const ALL = this._allSteps(manager);
+
     // State
     let stepPreset = savedStepsPref;
-    let selectedSteps = stepPreset === 'all' ? [...this.ALL_STEPS] : [...this.MAJOR_STEPS];
-    let customSteps = [...this.ALL_STEPS]; // for custom mode, start with all
+    let selectedSteps = stepPreset === 'all' ? [...ALL] : [...MAJOR];
+    let customSteps = [...ALL]; // for custom mode, start with all
 
     if (savedStepsPref === 'custom') {
       try {
@@ -217,16 +218,16 @@ class FigmaPusher {
           </div>
           <div class="fap-step-presets">
             <button class="btn ${stepPreset === 'major' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="major">
-              Major (${this.MAJOR_STEPS.length})
+              Major (${MAJOR.length})
             </button>
             <button class="btn ${stepPreset === 'all' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="all">
-              All (${this.ALL_STEPS.length})
+              All (${ALL.length})
             </button>
             <button class="btn ${stepPreset === 'custom' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="custom">
               Custom
             </button>
           </div>
-          ${stepPreset === 'custom' ? this._renderStepPicker(customSteps) : ''}
+          ${stepPreset === 'custom' ? this._renderStepPicker(customSteps, MAJOR) : ''}
         </div>
 
         <div class="fap-section fap-summary">
@@ -283,8 +284,8 @@ class FigmaPusher {
       container.querySelectorAll('.fap-preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           stepPreset = btn.dataset.preset;
-          if (stepPreset === 'major') selectedSteps = [...this.MAJOR_STEPS];
-          else if (stepPreset === 'all') selectedSteps = [...this.ALL_STEPS];
+          if (stepPreset === 'major') selectedSteps = [...MAJOR];
+          else if (stepPreset === 'all') selectedSteps = [...ALL];
           else selectedSteps = [...customSteps];
           this.savePref(this.STORAGE_KEY_STEPS, stepPreset);
           render();
@@ -394,7 +395,7 @@ class FigmaPusher {
     render();
   }
 
-  _renderStepPicker(customSteps) {
+  _renderStepPicker(customSteps, majorSteps) {
     // All possible steps we show as toggleable chips
     const allPossible = [
       0, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100,
@@ -403,13 +404,14 @@ class FigmaPusher {
     ];
     // Merge any custom steps into the list
     const merged = [...new Set([...allPossible, ...customSteps])].sort((a, b) => a - b);
+    const majorSet = new Set(majorSteps);
 
     return `
       <div class="fap-step-picker">
         <div class="fap-step-chips">
           ${merged.map(s => {
             const active = customSteps.includes(s);
-            const isMajor = this.MAJOR_STEPS.includes(s);
+            const isMajor = majorSet.has(s);
             return `<button class="fap-step-chip ${active ? 'active' : ''} ${isMajor ? 'major' : ''}" data-step="${s}">${s}</button>`;
           }).join('')}
         </div>

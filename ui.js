@@ -174,10 +174,13 @@ class App {
   }
 
   _loadConfigIntoManager(config) {
-    // ScaleManager.fromConfig handles legacy property names + curve points
+    // ScaleManager.fromConfig handles legacy property names, curve points,
+    // and step-schedule defaults (if absent).
     this.manager.fromConfig({
       lightnessMax: config.lightnessMax,
       lightnessMin: config.lightnessMin,
+      stepLabels: config.stepLabels,
+      majorDivisor: config.majorDivisor,
       scales: config.scales,
       selectedId: null
     });
@@ -201,61 +204,7 @@ class App {
     this._scheduleGradientResize();
   }
 
-  // ---- Set switcher dropdown (header-left quick switch) ----
-
-  _toggleSetDropdown(anchor) {
-    const existing = anchor.querySelector('.set-dropdown');
-    if (existing) { existing.remove(); return; }
-    document.querySelectorAll('.set-dropdown').forEach(d => d.remove());
-
-    const activeId = this.store.activeId;
-    const sets = this.store.list();
-
-    const dd = document.createElement('div');
-    dd.className = 'set-dropdown';
-
-    sets.forEach(s => {
-      const btn = document.createElement('button');
-      btn.className = 'dropdown-item' + (s.id === activeId ? ' set-item-active' : '');
-      btn.innerHTML = `
-        <span class="set-item-dot"></span>
-        <span class="dropdown-item-label">${s.name}</span>
-        <span class="set-item-count">${s.config.scales.length}</span>
-      `;
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        dd.remove();
-        if (s.id !== activeId) this._switchSet(s.id);
-      });
-      dd.appendChild(btn);
-    });
-
-    const div = document.createElement('div');
-    div.className = 'dropdown-divider';
-    dd.appendChild(div);
-
-    const mgmt = document.createElement('button');
-    mgmt.className = 'dropdown-item';
-    mgmt.innerHTML = `<span class="dropdown-item-icon">${icon('gear',14)}</span><span class="dropdown-item-label">Manage sets…</span>`;
-    mgmt.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dd.remove();
-      this._showSetsModal();
-    });
-    dd.appendChild(mgmt);
-
-    anchor.appendChild(dd);
-
-    const closeOnOutside = (e) => {
-      if (!dd.contains(e.target) && !anchor.contains(e.target)) {
-        dd.remove();
-        document.removeEventListener('mousedown', closeOnOutside);
-      }
-    };
-    setTimeout(() => document.addEventListener('mousedown', closeOnOutside), 10);
-  }
-
-  // ---- Sets management modal ----
+  // ---- Set switcher dropdown (header-center, full management) ----
 
   _relTime(ts) {
     const s = Math.floor((Date.now() - ts) / 1000);
@@ -266,40 +215,41 @@ class App {
     return new Date(ts).toLocaleDateString();
   }
 
-  _showSetsModal() {
-    document.querySelector('.modal-overlay')?.remove();
+  _toggleSetDropdown(anchor, renameId = null) {
+    const existing = anchor.querySelector('.set-dropdown');
+    if (existing && renameId == null) { existing.remove(); return; }
+    document.querySelectorAll('.set-dropdown').forEach(d => d.remove());
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    const dd = document.createElement('div');
+    dd.className = 'set-dropdown';
 
-    const modal = document.createElement('div');
-    modal.className = 'modal sets-modal';
-    modal.innerHTML = `
-      <div class="modal-header">
-        <h2 class="modal-title">Sets</h2>
-        <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
-      </div>
-      <div class="modal-body">
-        <div class="sets-list"></div>
-        <div class="sets-footer">
-          <button class="btn btn-secondary" id="btn-new-set">${icon('plus',14)} New set</button>
-        </div>
-      </div>
-    `;
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
+    const list = document.createElement('div');
+    list.className = 'set-dropdown-list';
+    dd.appendChild(list);
 
-    modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
+    // Close-on-outside — attached once per open, cleared on close.
+    // We register it *before* renderItems so that if renderItems triggers
+    // a blur-commit cycle we don't end up double-registering.
+    let closeOutside;
+    const close = () => {
+      dd.remove();
+      document.removeEventListener('mousedown', closeOutside);
+    };
+    closeOutside = (e) => {
+      if (!dd.contains(e.target) && !anchor.contains(e.target)) close();
+    };
 
-    const openRename = (info, s) => {
-      const nameEl = info.querySelector('[data-name]');
+    const openRename = (row, s) => {
+      const nameEl = row.querySelector('[data-name]');
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'set-rename-input';
       input.value = s.name;
       nameEl.replaceWith(input);
       input.focus(); input.select();
+      // While rename input is focused, clicking outside the input should
+      // commit, not close the dropdown — the outside-close check excludes
+      // dd contents already, so this is fine.
       const commit = () => {
         const val = input.value.trim() || s.name;
         this.store.rename(s.id, val);
@@ -307,64 +257,82 @@ class App {
           const label = document.querySelector('.set-switcher-name');
           if (label) label.textContent = val;
         }
-        renderList();
+        // If the dropdown was closed by the same click that caused blur,
+        // it's already detached — skip the re-render.
+        if (dd.isConnected) renderItems();
       };
       input.addEventListener('blur', commit);
       input.addEventListener('keydown', (e) => {
+        // Stop propagation FIRST — the parent .set-item-main has a keydown
+        // handler that preventDefault()s space (ARIA button activation).
+        // Without this, spaces never reach the input's text entry.
+        e.stopPropagation();
         if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
         if (e.key === 'Escape') { input.value = s.name; input.blur(); }
       });
+      // stop row click-to-switch from firing while input is active
+      input.addEventListener('mousedown', (e) => e.stopPropagation());
+      input.addEventListener('click', (e) => e.stopPropagation());
     };
 
-    const renderList = (renameId = null) => {
-      const list = modal.querySelector('.sets-list');
+    const reopenAt = (focusRenameId = null) => {
+      // _render() wipes the header, so re-locate the anchor and reopen
+      const newAnchor = this.root.querySelector('.set-switcher-wrap');
+      if (newAnchor) this._toggleSetDropdown(newAnchor, focusRenameId);
+    };
+
+    const renderItems = () => {
       list.innerHTML = '';
       const activeId = this.store.activeId;
       const sets = this.store.list();
+      const canDelete = sets.length > 1;
 
       sets.forEach(s => {
-        const card = document.createElement('div');
-        card.className = 'set-card' + (s.id === activeId ? ' set-card-active' : '');
-        card.dataset.setId = s.id;
+        const row = document.createElement('div');
+        row.className = 'set-item' + (s.id === activeId ? ' set-item-active' : '');
 
-        const strip = document.createElement('div');
-        strip.className = 'set-swatch-strip';
-        const first = s.config.scales[0];
-        if (first) {
-          const kc = first.keyColors;
-          const pick = kc.length <= 5 ? kc : [0,1,2,3,4].map(i => kc[Math.floor(i * (kc.length-1) / 4)]);
-          pick.forEach(hex => {
-            const sw = document.createElement('span');
-            sw.className = 'set-swatch';
-            sw.style.backgroundColor = hex;
-            strip.appendChild(sw);
-          });
-        }
-
-        const info = document.createElement('div');
-        info.className = 'set-card-info';
-        info.innerHTML = `
-          <div class="set-card-name" data-name>${s.name}</div>
-          <div class="set-card-meta">${s.config.scales.length} ${s.config.scales.length === 1 ? 'scale' : 'scales'} · ${this._relTime(s.modified)}</div>
+        // main (clickable) area → switch
+        // Use a div (not button) so the rename input can safely nest inside
+        const main = document.createElement('div');
+        main.className = 'set-item-main';
+        main.setAttribute('role', 'button');
+        main.tabIndex = 0;
+        main.innerHTML = `
+          <span class="set-item-dot"></span>
+          <span class="set-item-info">
+            <span class="set-item-name" data-name>${s.name}</span>
+            <span class="set-item-meta">${s.config.scales.length} ${s.config.scales.length === 1 ? 'scale' : 'scales'} · ${this._relTime(s.modified)}</span>
+          </span>
         `;
+        const doSwitch = () => {
+          if (row.querySelector('.set-rename-input')) return;
+          close();
+          if (s.id !== activeId) this._switchSet(s.id);
+        };
+        main.addEventListener('click', (e) => { e.stopPropagation(); doSwitch(); });
+        main.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSwitch(); }
+        });
+        row.appendChild(main);
 
+        // actions (hover-revealed)
         const actions = document.createElement('div');
-        actions.className = 'set-card-actions';
+        actions.className = 'set-item-actions';
 
         const mkBtn = (ico, tip, handler, extra = '') => {
           const b = document.createElement('button');
-          b.className = 'btn-icon set-card-btn' + (extra ? ' ' + extra : '');
+          b.className = 'set-item-btn' + (extra ? ' ' + extra : '');
           b.dataset.tooltip = tip;
-          b.innerHTML = icon(ico, 14);
+          b.innerHTML = icon(ico, 13);
           b.addEventListener('click', (e) => { e.stopPropagation(); handler(); });
           return b;
         };
 
-        actions.appendChild(mkBtn('pencil', 'Rename', () => openRename(info, s)));
+        actions.appendChild(mkBtn('pencil', 'Rename', () => openRename(main, s)));
 
         actions.appendChild(mkBtn('copy', 'Duplicate', () => {
           this.store.duplicate(s.id);
-          renderList();
+          renderItems();
         }));
 
         const delBtn = mkBtn('trash', 'Delete', () => {
@@ -372,45 +340,52 @@ class App {
           const wasActive = s.id === this.store.activeId;
           this.store.delete(s.id);
           if (wasActive) {
+            // SetStore already picked a new activeId
             this._loadConfigIntoManager(this.store.getActive().config);
             this.manager.selectedId = null;
             this._openSourcePanelId = null;
             this._render();
             this._scheduleGradientResize();
+            reopenAt();
+            return;
           }
-          renderList();
-        }, 'set-card-btn-danger');
-        if (this.store.sets.length <= 1) delBtn.disabled = true;
+          renderItems();
+        }, 'set-item-btn-danger');
+        if (!canDelete) delBtn.disabled = true;
         actions.appendChild(delBtn);
 
-        card.appendChild(strip);
-        card.appendChild(info);
-        card.appendChild(actions);
-
-        card.addEventListener('click', (e) => {
-          if (e.target.closest('.set-card-actions') || e.target.closest('.set-rename-input')) return;
-          if (s.id !== this.store.activeId) this._switchSet(s.id);
-          overlay.remove();
-        });
-
-        list.appendChild(card);
+        row.appendChild(actions);
+        list.appendChild(row);
 
         if (s.id === renameId) {
-          card.scrollIntoView({ block: 'nearest' });
-          openRename(info, s);
+          row.scrollIntoView({ block: 'nearest' });
+          openRename(main, s);
+          renameId = null; // only once
         }
       });
     };
 
-    renderList();
+    renderItems();
 
-    modal.querySelector('#btn-new-set').addEventListener('click', () => {
+    const divider = document.createElement('div');
+    divider.className = 'dropdown-divider';
+    dd.appendChild(divider);
+
+    const newBtn = document.createElement('button');
+    newBtn.className = 'dropdown-item';
+    newBtn.innerHTML = `<span class="dropdown-item-icon">${icon('plus',14)}</span><span class="dropdown-item-label">New set</span>`;
+    newBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const id = this.store.create('Untitled', defaultsConfig());
+      close();
       this._switchSet(id);
-      // Modal survives _render() (it lives on document.body, not this.root).
-      // Re-render the list with the new card in rename mode.
-      renderList(id);
+      reopenAt(id);
     });
+    dd.appendChild(newBtn);
+
+    anchor.appendChild(dd);
+
+    setTimeout(() => document.addEventListener('mousedown', closeOutside), 10);
   }
 
   // ---- URL sharing ----
@@ -450,13 +425,22 @@ class App {
       return entry;
     });
 
-    return {
+    const payload = {
       v: 1,
       name: this.store.getActive().name,
       lMax: mgr.lightnessMax,
       lMin: mgr.lightnessMin,
       scales
     };
+    // Only include step schedule if it differs from defaults (keep URLs short)
+    if (mgr.stepLabels.length !== DEFAULT_STEP_LABELS.length ||
+        mgr.stepLabels.some((s, i) => s !== DEFAULT_STEP_LABELS[i])) {
+      payload.st = mgr.stepLabels;
+    }
+    if (mgr.majorDivisor !== DEFAULT_MAJOR_DIVISOR) {
+      payload.md = mgr.majorDivisor;
+    }
+    return payload;
   }
 
   // Convert compact payload → ScaleManager.fromConfig shape
@@ -464,6 +448,8 @@ class App {
     return {
       lightnessMax: payload.lMax ?? 1.0,
       lightnessMin: payload.lMin ?? 0.15,
+      stepLabels: payload.st,       // undefined → fromConfig falls back to defaults
+      majorDivisor: payload.md,
       scales: payload.scales.map(s => {
         const cfg = {
           name: s.n,
@@ -750,6 +736,7 @@ class App {
       ['--bg-muted',        60],
       ['--bg-alt',          50],
       ['--hover',           50],
+      ['--border-faint',    100],   // 100 gap — popover outlines
       ['--border-subtle',   150],   // 150 gap
       ['--border',          200],   // 200 gap
       ['--border-strong',   300],   // 300 gap
@@ -786,13 +773,18 @@ class App {
     }
     styleEl.textContent = css;
 
-    // 2. Wire semantic chrome tokens on :root to primary scale's primitives
+    // 2. Wire semantic chrome tokens on :root to primary scale's primitives.
+    // Snap each requested step to the nearest *actually generated* step so
+    // that custom step lists don't leave semantic tokens pointing at
+    // undefined primitives. Ceil for targets ≤450, floor for targets >450 —
+    // preserves the intent (subtle bgs stay light, text stays dark).
     const primary = this.manager.scales[0];
     if (!primary) return;
     const p = this._scaleCssPrefix(primary.name);
+    const snap = (step) => this.manager.snapStep(step, step <= 450 ? 1 : -1);
 
     for (const [token, step] of App.SEMANTIC_MAP) {
-      root.style.setProperty(token, `var(--${p}-${step})`);
+      root.style.setProperty(token, `var(--${p}-${snap(step)})`);
     }
 
     // 3. Map semantic role colors from named scales
@@ -811,9 +803,9 @@ class App {
       for (const [role, pattern, mainStep, subtleStep, fgStep] of roles) {
         if (!matched.has(role) && pattern.test(name)) {
           const sp = this._scaleCssPrefix(name);
-          root.style.setProperty(`--${role}`,         `var(--${sp}-${mainStep})`);
-          root.style.setProperty(`--${role}-subtle`,  `var(--${sp}-${subtleStep})`);
-          root.style.setProperty(`--${role}-fg`,      `var(--${sp}-${fgStep})`);
+          root.style.setProperty(`--${role}`,         `var(--${sp}-${snap(mainStep)})`);
+          root.style.setProperty(`--${role}-subtle`,  `var(--${sp}-${snap(subtleStep)})`);
+          root.style.setProperty(`--${role}-fg`,      `var(--${sp}-${snap(fgStep)})`);
           matched.add(role);
         }
       }
@@ -826,25 +818,26 @@ class App {
     header.innerHTML = `
       <div class="header-left">
         <h1 class="app-title">ChromaScale</h1>
+      </div>
+      <div class="header-center">
         <div class="set-switcher-wrap">
-          <button class="set-switcher" id="btn-set-switcher">
+          <button class="btn btn-secondary set-switcher" id="btn-set-switcher">
+            <span class="set-switcher-prefix">Set:</span>
             <span class="set-switcher-name">${this.store.getActive().name}</span>
             ${icon('caret-down',12)}
           </button>
         </div>
-      </div>
-      <div class="header-actions">
-        <button class="btn btn-secondary" id="btn-add-scale">
-          ${icon('plus',14)}
-          Add scale
-        </button>
         <div class="settings-wrap">
-          <button class="btn btn-secondary btn-icon-only" id="btn-settings" data-tooltip="Global settings">
-            ${icon('gear',16)}
+          <button class="btn btn-secondary" id="btn-settings">
+            ${icon('gear',14)}
+            Settings
           </button>
         </div>
-        <button class="btn btn-secondary btn-icon-only" id="btn-share" data-tooltip="Share">
-          ${icon('share',16)}
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="btn-share">
+          ${icon('share',14)}
+          Share
         </button>
         <button class="btn btn-primary" id="btn-export">
           ${icon('export',16)}
@@ -854,16 +847,6 @@ class App {
     `;
     this.root.appendChild(header);
 
-    header.querySelector('#btn-add-scale').addEventListener('click', () => {
-
-      const colors = ['#8B5CF6', '#D97757', '#06B6D4', '#EC4899', '#84CC16', '#F59E0B'];
-      const names = ['Custom', 'Clay', 'Teal', 'Pink', 'Lime', 'Amber'];
-      const idx = this.manager.scales.length % colors.length;
-      this.manager.addScale(names[idx] || 'New', colors[idx] || '#8B5CF6');
-      this._saveActiveSet();
-      this._render();
-    });
-    
     header.querySelector('#btn-settings').addEventListener('click', (e) => {
       e.stopPropagation();
       this._toggleSettingsPopover(header.querySelector('.settings-wrap'));
@@ -890,12 +873,13 @@ class App {
     // Check all step pairs against contrast requirements using the linear L schedule
     const rangeWarning = (lMax, lMin) => {
       // Build linear L schedule for all steps
-      const Ls = STEP_LABELS.map(s => lMax - (lMax - lMin) * (s / 900));
+      const steps = this.manager.stepLabels;
+      const Ls = steps.map(s => lMax - (lMax - lMin) * (s / 900));
       // Find the worst failing pair (largest deficit = req - actual)
       let worstDeficit = 0, worstRatio = 0, worstReq = 0, worstFrom = 0, worstTo = 0;
-      for (let i = 0; i < STEP_LABELS.length; i++) {
-        for (let j = i + 1; j < STEP_LABELS.length; j++) {
-          const gap = STEP_LABELS[j] - STEP_LABELS[i];
+      for (let i = 0; i < steps.length; i++) {
+        for (let j = i + 1; j < steps.length; j++) {
+          const gap = steps[j] - steps[i];
           const req = gap >= 600 ? 7 : gap >= 500 ? 4.5 : gap >= 400 ? 3 : 0;
           if (!req) continue;
           const yI = Ls[i] * Ls[i] * Ls[i];
@@ -906,8 +890,8 @@ class App {
             worstDeficit = deficit;
             worstRatio = ratio;
             worstReq = req;
-            worstFrom = STEP_LABELS[i];
-            worstTo = STEP_LABELS[j];
+            worstFrom = steps[i];
+            worstTo = steps[j];
           }
         }
       }
@@ -915,6 +899,9 @@ class App {
       const level = worstReq >= 7 ? 'AAA (7:1)' : worstReq >= 4.5 ? 'AA (4.5:1)' : 'A (3:1)';
       return `Steps ${worstFrom}\u2013${worstTo} only achieve ${worstRatio.toFixed(1)}:1 (needs ${worstReq}:1 for ${level}). Widen the lightness range.`;
     };
+
+    const stepsText = this.manager.stepLabels.join(', ');
+    const divisor = this.manager.majorDivisor;
 
     const popover = document.createElement('div');
     popover.className = 'settings-popover';
@@ -933,6 +920,26 @@ class App {
               value="${blackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
           </div>
           <div class="settings-warning" id="settings-light-warning"></div>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-popover-header">Steps</div>
+        <div class="settings-popover-body">
+          <label class="settings-label">Step labels <span class="settings-hint">(comma-separated, must start at 0 and end at 900)</span></label>
+          <textarea class="settings-textarea" id="settings-steps" rows="3" spellcheck="false">${stepsText}</textarea>
+          <div class="settings-warning" id="settings-steps-warning" hidden></div>
+          <div class="settings-row">
+            <label class="settings-label">Major steps <span class="settings-hint">(labels divisible by)</span></label>
+            <select class="control-input" id="settings-divisor">
+              <option value="10"${divisor === 10 ? ' selected' : ''}>Every 10</option>
+              <option value="25"${divisor === 25 ? ' selected' : ''}>Every 25</option>
+              <option value="50"${divisor === 50 ? ' selected' : ''}>Every 50</option>
+              <option value="100"${divisor === 100 ? ' selected' : ''}>Every 100</option>
+            </select>
+          </div>
+          <div class="settings-hint-block">
+            ${this.manager.stepLabels.length} steps · ${this.manager.majorSteps().length} major
+          </div>
         </div>
       </div>
     `;
@@ -975,7 +982,61 @@ class App {
       onLimitChange(this.manager.setLightnessMax, 'settings-white-limit'));
     popover.querySelector('#settings-black-limit').addEventListener('input',
       onLimitChange(this.manager.setLightnessMin, 'settings-black-limit'));
-    
+
+    // Steps — commit on blur or Enter (regenerating all scales per-keystroke would be too noisy)
+    const stepsInput = popover.querySelector('#settings-steps');
+    const stepsWarn = popover.querySelector('#settings-steps-warning');
+    const commitSteps = (refocus) => {
+      // Skip no-op commits — avoids spurious re-renders on simple blur
+      const current = this.manager.stepLabels.join(', ');
+      if (stepsInput.value.trim() === current) return;
+      try {
+        this.manager.setSteps(stepsInput.value);
+        this.manager.regenerateAll();
+        this._saveActiveSet();
+        this._render();
+        const newAnchor = this.root.querySelector('.settings-wrap');
+        if (newAnchor) {
+          this._toggleSettingsPopover(newAnchor);
+          if (refocus) {
+            const ta = newAnchor.querySelector('#settings-steps');
+            if (ta) ta.focus();
+          }
+        }
+      } catch (e) {
+        stepsWarn.textContent = e.message;
+        stepsWarn.hidden = false;
+      }
+    };
+    stepsInput.addEventListener('blur', () => {
+      // If the popover was already torn down by an outside click, skip
+      if (!popover.isConnected) return;
+      commitSteps(false);
+    });
+    stepsInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitSteps(true); }
+    });
+    // Live validation as you type (show error but don't commit)
+    stepsInput.addEventListener('input', () => {
+      try {
+        parseStepLabels(stepsInput.value);
+        stepsWarn.hidden = true;
+      } catch (e) {
+        stepsWarn.textContent = e.message;
+        stepsWarn.hidden = false;
+      }
+    });
+
+    // Divisor — commit immediately (pure presentation change, cheap)
+    popover.querySelector('#settings-divisor').addEventListener('change', (e) => {
+      this.manager.setMajorDivisor(parseInt(e.target.value, 10));
+      this.manager.regenerateAll(); // isMajor is baked into step objects
+      this._saveActiveSet();
+      this._render();
+      const newAnchor = this.root.querySelector('.settings-wrap');
+      if (newAnchor) this._toggleSettingsPopover(newAnchor);
+    });
+
     // Close when clicking outside
     const closeOnOutside = (e) => {
       if (!popover.contains(e.target) && !anchor.contains(e.target)) {
@@ -1001,11 +1062,7 @@ class App {
         row.dataset.hex = step.hex;
         // Update per-row dynamic colors
         const dir = step.label < 500 ? 1 : -1;
-        const snap = (t) => {
-          const clamped = Math.max(0, Math.min(900, t));
-          if (dir > 0) return STEP_LABELS.find(s => s >= clamped) || 900;
-          return STEP_LABELS.findLast(s => s <= clamped) || 0;
-        };
+        const snap = (t) => this.manager.snapStep(t, dir);
         row.style.setProperty('--swatch-text', `var(--${prefix}-${snap(step.label + 450 * dir)})`);
         row.style.setProperty('--swatch-text-hover', `var(--${prefix}-${snap(step.label + 600 * dir)})`);
         row.style.setProperty('--swatch-bg-hover', `var(--${prefix}-${snap(step.label + 150 * dir)})`);
@@ -1030,6 +1087,41 @@ class App {
       const col = this._createScaleColumn(scale);
       main.appendChild(col);
     });
+
+    // Ghost "New scale" column — always last
+    const ghost = document.createElement('button');
+    ghost.className = 'new-scale-column';
+    ghost.innerHTML = `
+      ${icon('plus', 24)}
+      <span class="new-scale-label">New scale</span>
+    `;
+    ghost.addEventListener('click', () => {
+      const colors = ['#8B5CF6', '#D97757', '#06B6D4', '#EC4899', '#84CC16', '#F59E0B'];
+      const names = ['Custom', 'Clay', 'Teal', 'Pink', 'Lime', 'Amber'];
+      const idx = this.manager.scales.length % colors.length;
+
+      // Capture ghost's position relative to the viewport so we can restore
+      // it after the render (otherwise scroll snaps to 0 then whipsaws back).
+      const scroller = main;
+      const ghostLeft = ghost.getBoundingClientRect().left;
+
+      this.manager.addScale(names[idx] || 'New', colors[idx] || '#8B5CF6');
+      this._saveActiveSet();
+      this._render();
+
+      // After render, find the new ghost and align its viewport x-position to
+      // where the old one was. The new column appears to slide in on the left
+      // of a stationary ghost, rather than everything jumping.
+      const newScroller = this.root.querySelector('.scales-container');
+      const newGhost = newScroller?.querySelector('.new-scale-column');
+      if (newScroller && newGhost) {
+        // Pre-render scrollLeft was lost (DOM rebuilt), compute the delta
+        // needed to put new ghost at the same viewport-x as the old one.
+        const delta = newGhost.getBoundingClientRect().left - ghostLeft;
+        newScroller.scrollLeft += delta;
+      }
+    });
+    main.appendChild(ghost);
 
     wrapper.appendChild(main);
 
@@ -1096,10 +1188,12 @@ class App {
     col.className = 'scale-column' + (scale.id === this.manager.selectedId ? ' selected' : '');
     col.dataset.scaleId = scale.id;
 
-    // Per-column semantic overrides — scope all children to this scale's palette
+    // Per-column semantic overrides — scope all children to this scale's palette.
+    // Snap to the nearest defined step so custom step lists don't break refs.
     const prefix = this._scaleCssPrefix(scale.name);
+    const snap = (s) => this.manager.snapStep(s, s <= 450 ? 1 : -1);
     for (const [token, step] of App.SEMANTIC_MAP) {
-      col.style.setProperty(token, `var(--${prefix}-${step})`);
+      col.style.setProperty(token, `var(--${prefix}-${snap(step)})`);
     }
 
     const allSteps = scale.steps;
@@ -1198,11 +1292,7 @@ class App {
 
       // Per-row colors — offset from this swatch's step
       const dir = step.label < 500 ? 1 : -1;
-      const snap = (t) => {
-        const clamped = Math.max(0, Math.min(900, t));
-        if (dir > 0) return STEP_LABELS.find(s => s >= clamped) || 900;
-        return STEP_LABELS.findLast(s => s <= clamped) || 0;
-      };
+      const snap = (t) => this.manager.snapStep(t, dir);
       const textStep = snap(step.label + 450 * dir);
       const textHoverStep = snap(step.label + 600 * dir);
       const bgHoverStep = snap(step.label + 150 * dir);
@@ -1328,11 +1418,33 @@ class App {
         disabled: this.manager.scales.length <= 1,
         action: () => {
           dropdown.remove();
-    
-          this.manager.removeScale(scale.id);
-          this._saveActiveSet();
-          this._render();
-          this._scheduleGradientResize();
+
+          // Animate the column collapsing to zero width first so the
+          // scroll container naturally flows left as content shrinks,
+          // then do the actual delete + re-render once the transition ends.
+          // This avoids the instant snap-to-0 that a bare _render() causes.
+          col.classList.add('deleting');
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            this.manager.removeScale(scale.id);
+            this._saveActiveSet();
+            // Preserve scroll position across the re-render — the animated
+            // collapse already brought the view to its natural resting place.
+            const scroller = this.root.querySelector('.scales-container');
+            const pos = scroller ? scroller.scrollLeft : 0;
+            this._render();
+            this._scheduleGradientResize();
+            const newScroller = this.root.querySelector('.scales-container');
+            if (newScroller) newScroller.scrollLeft = pos;
+          };
+          col.addEventListener('transitionend', (e) => {
+            // Wait for the width transition specifically, not child fades
+            if (e.target === col && e.propertyName.includes('inline-size')) finish();
+          });
+          // Fallback in case transition doesn't fire (reduced motion / detached)
+          setTimeout(finish, 300);
         }
       }
     ];
@@ -1739,8 +1851,7 @@ class App {
 
         // Outline color: +200 steps, snapped to nearest available step at or above
         const prefix = this._scaleCssPrefix(scale.name);
-        const target = Math.min(sourceLabel + 200, 900);
-        const outlineStep = STEP_LABELS.find(s => s >= target) || 900;
+        const outlineStep = this.manager.snapStep(sourceLabel + 200, 1);
         sourceRow.style.setProperty('--hover-outline', `var(--${prefix}-${outlineStep})`);
 
         // Track rows per tier for pill creation
@@ -1775,13 +1886,8 @@ class App {
           badge.textContent = `${signedGap > 0 ? '+' : ''}${signedGap} \u00B7 ${ratio.toFixed(1)}:1`;
           // Badge colors relative to the target swatch: 700 jump for text, 200 jump for bg
           const dir = targetLabel < 500 ? 1 : -1;
-          const snapStep = (t) => {
-            const c = Math.max(0, Math.min(900, t));
-            if (dir > 0) return STEP_LABELS.find(s => s >= c) || 900;
-            return STEP_LABELS.findLast(s => s <= c) || 0;
-          };
-          badge.style.color = `var(--${prefix}-${snapStep(targetLabel + 700 * dir)})`;
-          badge.style.backgroundColor = `var(--${prefix}-${snapStep(targetLabel + 100 * dir)})`;
+          badge.style.color = `var(--${prefix}-${this.manager.snapStep(targetLabel + 700 * dir, dir)})`;
+          badge.style.backgroundColor = `var(--${prefix}-${this.manager.snapStep(targetLabel + 100 * dir, dir)})`;
           targetRow.appendChild(badge);
         });
 

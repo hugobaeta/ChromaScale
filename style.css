@@ -45,6 +45,10 @@
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --radius: 6px;
   --radius-sm: 4px;
+  --radius-lg: 10px;
+  /* Hairline border width for popovers/dividers — sub-pixel on retina,
+     rounds to 1px on 1× displays. */
+  --hairline: 0.5px;
 
   /* Tier 1: Default achromatic scale — OKLCH linear lightness, white → black */
   --default-0:   #FFFFFF;
@@ -89,6 +93,7 @@
   --bg-muted:        var(--default-60);
   --bg-alt:          var(--default-50);
   --hover:           var(--default-50);
+  --border-faint:    var(--default-100);          /* 100 gap — popover outlines */
   --border-subtle:   var(--default-150);          /* 150 gap */
   --border:          var(--default-200);          /* 200 gap */
   --border-strong:   var(--default-300);          /* 300 gap */
@@ -156,29 +161,17 @@ html, body {
   z-index: 20;
 }
 
-.header-left { display: flex; align-items: center; gap: 12px; min-inline-size: 0; }
+.header-left, .header-actions { flex: 1 1 0; min-inline-size: 0; }
+.header-left { display: flex; align-items: center; }
+.header-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.header-center { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
 .app-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
-.header-actions { display: flex; gap: 6px; }
 
-/* === Set Switcher (header dropdown) === */
+/* === Set Switcher (header-center, full-featured dropdown) === */
 .set-switcher-wrap { position: relative; }
-.set-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding-block: 4px; padding-inline: 10px 8px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
-}
-.set-switcher:hover { background: var(--bg-muted); border-color: var(--border-strong); }
-.set-switcher svg { color: var(--text-muted); }
+/* .set-switcher is a .btn.btn-secondary — only override the name clipping & caret color */
+.set-switcher > svg:last-child { color: var(--text-muted); margin-inline-start: 2px; }
+.set-switcher-prefix { color: var(--text-muted); font-weight: 400; margin-inline-end: 2px; }
 .set-switcher-name {
   max-inline-size: 160px;
   overflow: hidden;
@@ -188,94 +181,98 @@ html, body {
 .set-dropdown {
   position: absolute;
   inset-block-start: calc(100% + 6px);
-  inset-inline-start: 0;
+  inset-inline-start: 50%;
+  /* Use the standalone translate property so the dropdownIn keyframe's
+     transform (translateY + scale) composes rather than clobbers. */
+  translate: -50% 0;
   z-index: 200;
-  min-inline-size: 200px;
-  max-inline-size: 280px;
-  max-block-size: 60vh;
-  overflow-y: auto;
+  inline-size: 300px;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--hairline) solid var(--border-faint);
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
-  padding: 4px;
+  padding-block: 4px;
   animation: dropdownIn 0.12s ease-out;
 }
+.set-dropdown-list {
+  max-block-size: 50vh;
+  overflow-y: auto;
+  padding-inline: 4px;
+}
+/* Full-bleed divider — matches settings-section border-block-start style */
+.set-dropdown .dropdown-divider {
+  margin-block: 4px;
+  margin-inline: 0;
+}
+/* New set row at the bottom — override .dropdown-item's inline-size: 100%
+   so margin-inline doesn't overflow the container */
+.set-dropdown > .dropdown-item {
+  inline-size: auto;
+  margin-inline: 4px;
+  border-radius: calc(var(--radius-lg) - 4px);
+}
+.set-item {
+  display: flex;
+  align-items: stretch;
+  /* Inner radius = outer (10px) − inset padding (4px) for concentric nesting */
+  border-radius: calc(var(--radius-lg) - 4px);
+  transition: background 0.1s;
+}
+.set-item:hover { background: var(--bg-muted); }
+.set-item-main {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block: 6px; padding-inline: 10px 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: start;
+  color: var(--text);
+}
+/* Dot gets a 14px column so its text-start matches the .dropdown-item icon */
 .set-item-dot {
   inline-size: 6px;
   block-size: 6px;
   border-radius: 50%;
   background: transparent;
   flex-shrink: 0;
+  /* Center the 6px dot inside a 14px visual column to align with icon-labels */
+  margin-inline: 4px;
 }
-.set-item-active { font-weight: 600; }
 .set-item-active .set-item-dot { background: var(--accent); }
-.set-item-count {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-/* === Sets Management Modal === */
-.sets-modal { inline-size: 520px; }
-.sets-list {
+.set-item-active .set-item-name { font-weight: 600; }
+.set-item-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-block-end: 16px;
-  max-block-size: 50vh;
-  overflow-y: auto;
+  min-inline-size: 0;
 }
-.set-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: border-color 0.1s, background 0.1s;
-}
-.set-card:hover { border-color: var(--border-strong); background: var(--bg-subtle); }
-.set-card-active { border-color: var(--accent); background: var(--accent-100); }
-.set-swatch-strip { display: flex; gap: 2px; flex-shrink: 0; }
-.set-swatch {
-  inline-size: 14px;
-  block-size: 28px;
-  border-radius: 3px;
-  border: 1px solid rgba(0,0,0,0.06);
-}
-.set-card-info { flex: 1; min-inline-size: 0; }
-.set-card-name {
-  font-size: 13px;
-  font-weight: 600;
+.set-item-name {
+  font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.set-card-meta { font-size: 10px; color: var(--text-muted); margin-block-start: 2px; }
-.set-rename-input {
-  inline-size: 100%;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 600;
-  padding-block: 2px; padding-inline: 6px;
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  outline: none;
+.set-item-meta {
+  font-size: 10px;
+  color: var(--text-muted);
 }
-.set-card-actions {
+.set-item-actions {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 1px;
+  padding-inline-end: 4px;
   opacity: 0;
   transition: opacity 0.12s;
 }
-.set-card:hover .set-card-actions,
-.set-card-active .set-card-actions { opacity: 1; }
-.set-card-btn {
-  inline-size: 26px;
-  block-size: 26px;
+.set-item:hover .set-item-actions,
+.set-item:has(.set-rename-input) .set-item-actions { opacity: 1; }
+.set-item-btn {
+  inline-size: 24px;
+  block-size: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -285,12 +282,19 @@ html, body {
   color: var(--text-muted);
   cursor: pointer;
 }
-.set-card-btn:hover:not(:disabled) { background: var(--bg-muted); color: var(--text); }
-.set-card-btn:disabled { opacity: 0.25; cursor: not-allowed; }
-.set-card-btn-danger:hover:not(:disabled) { background: var(--danger-subtle); color: var(--danger); }
-.sets-footer {
-  padding-block-start: 12px;
-  border-block-start: 1px solid var(--border);
+.set-item-btn:hover:not(:disabled) { background: var(--border); color: var(--text); }
+.set-item-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+.set-item-btn-danger:hover:not(:disabled) { background: var(--danger-subtle); color: var(--danger); }
+.set-rename-input {
+  inline-size: 100%;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  padding-block: 1px; padding-inline: 5px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+  background: var(--bg);
 }
 
 /* === Share Dialog === */
@@ -338,16 +342,21 @@ html, body {
 .settings-popover {
   position: absolute;
   inset-block-start: calc(100% + 6px);
-  inset-inline-end: 0;
+  inset-inline-start: 50%;
+  /* Standalone translate so dropdownIn's transform composes (see .set-dropdown) */
+  translate: -50% 0;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--hairline) solid var(--border-faint);
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 1000;
-  min-inline-size: 240px;
+  min-inline-size: 300px;
+  /* Clip section dividers to the rounded corners */
+  overflow: hidden;
+  animation: dropdownIn 0.12s ease-out;
 }
 .settings-section:not(:first-child) {
-  border-block-start: 1px solid var(--border);
+  border-block-start: var(--hairline) solid var(--border-faint);
 }
 .settings-popover-header {
   padding-block: 10px 0; padding-inline: 14px;
@@ -380,6 +389,11 @@ html, body {
   inline-size: 70px;
   flex-shrink: 0;
 }
+/* Selects size to their longest option, not the fixed 70px used for number inputs */
+.settings-row select.control-input {
+  inline-size: auto;
+  min-inline-size: fit-content;
+}
 .settings-warning {
   font-size: 11px;
   line-height: 1.4;
@@ -389,6 +403,25 @@ html, body {
   border-radius: var(--radius);
 }
 .settings-warning[hidden] { display: none; }
+.settings-textarea {
+  inline-size: 100%;
+  min-block-size: 5lh;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  padding-block: 6px; padding-inline: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+.settings-textarea:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.settings-hint-block {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 
 /* === Buttons === */
 .btn {
@@ -409,7 +442,7 @@ html, body {
   /* Layered box-shadow border: spacer, border, outline, ring */
   box-shadow:
     0 0 0 0px transparent,
-    0 0 0 1px var(--border),
+    0 0 0 0.5px var(--border),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
   transition:
@@ -420,7 +453,7 @@ html, body {
 .btn:hover {
   background: var(--bg);
   box-shadow:
-    0 0 0 1px var(--bg),
+    0 0 0 1.5px var(--bg),
     0 0 0 2px var(--border-hover, var(--border-strong)),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
@@ -432,7 +465,7 @@ html, body {
 .btn:active {
   box-shadow:
     0 0 0 0px transparent,
-    0 0 0 1px var(--border),
+    0 0 0 0.5px var(--border),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
   transition:
@@ -445,14 +478,14 @@ html, body {
   color: var(--accent-fg);
   box-shadow:
     0 0 0 0px transparent,
-    0 0 0 1px var(--accent),
+    0 0 0 0.5px var(--accent),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
 }
 .btn-primary:hover {
   background: var(--accent);
   box-shadow:
-    0 0 0 0.5px var(--accent),
+    0 0 0 1.5px var(--accent),
     0 0 0 2px var(--accent),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
@@ -460,7 +493,7 @@ html, body {
 .btn-primary:active {
   box-shadow:
     0 0 0 0px transparent,
-    0 0 0 1px var(--accent),
+    0 0 0 0.5px var(--accent),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
 }
@@ -558,14 +591,15 @@ html, body {
   z-index: 200;
   min-inline-size: 180px;
   background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: var(--hairline) solid var(--border-faint);
+  border-radius: var(--radius-lg);
   box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
   padding: 4px;
   animation: dropdownIn 0.12s ease-out;
   /* Reset to default scale — don't inherit column's palette */
   --bg:            var(--default-0);
   --bg-muted:      var(--default-60);
+  --border-faint:  var(--default-100);
   --border:        var(--default-200);
   --text:          var(--default-700);
   --text-secondary: var(--default-600);
@@ -623,8 +657,8 @@ html, body {
   color: var(--danger);
 }
 .dropdown-divider {
-  block-size: 1px;
-  background: var(--border);
+  block-size: var(--hairline);
+  background: var(--border-faint);
   margin-block: 4px; margin-inline: 0;
 }
 /* === Scales Container === */
@@ -638,7 +672,12 @@ html, body {
 .scales-container {
   display: flex;
   gap: 16px;
-  padding: 16px  16px 0;
+  /* 32px matches .app-header padding-inline so the first column's left edge
+     aligns with the "ChromaScale" title. The resting 32px scroll arrow
+     exactly fills this gutter; on hover it grows to 64px and overlays the
+     blurred column edge. */
+  padding-block: 16px 0;
+  padding-inline: 32px;
   overflow-x: auto;
   overflow-y: hidden;
   flex: 1;
@@ -651,31 +690,27 @@ html, body {
 
 .scroll-arrow {
   position: absolute;
-  inset-block-start: 0;
-  block-size: 72px;
-  inline-size: 100px;
+  inset-block: 0;
+  inline-size: 32px;
   z-index: 10;
   display: flex;
   align-items: center;
+  justify-content: center;
   border: none;
   cursor: pointer;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  transition: color 0.15s, background 0.15s, inline-size 0.2s ease-out;
+}
+.scroll-arrow:hover {
+  inline-size: 64px;
   color: var(--text);
-  background: none;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
 }
-.scroll-arrow-left {
-  inset-inline-start: 0;
-  padding-inline-start: 16px;
-  padding-inline-end: 64px;
-  justify-content: flex-start;
-  background: linear-gradient(to right, var(--bg) 40%, transparent);
-}
-.scroll-arrow-right {
-  inset-inline-end: 0;
-  padding-inline-start: 64px;
-  padding-inline-end: 16px;
-  justify-content: flex-end;
-  background: linear-gradient(to left, var(--bg) 40%, transparent);
-}
+.scroll-arrow-left { inset-inline-start: 0; }
+.scroll-arrow-right { inset-inline-end: 0; }
 .scroll-arrow[hidden] { display: none; }
 
 .scroll-sentinel {
@@ -693,6 +728,50 @@ html, body {
   flex-direction: column;
   transition: box-shadow 0.2s ease, opacity 0.2s ease;
 }
+/* Collapse animation on delete — lets the scroll container flow
+   naturally left as the column width eases to zero, avoiding a
+   hard snap when _render() rebuilds the DOM. */
+.scale-column.deleting {
+  min-inline-size: 0;
+  flex: 0 0 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    min-inline-size 0.22s ease-out,
+    flex-basis 0.22s ease-out,
+    opacity 0.15s ease-out;
+  pointer-events: none;
+}
+
+/* === Ghost "New scale" Column === */
+.new-scale-column {
+  /* Match .scale-column's sizing so it flexes identically */
+  min-inline-size: 270px;
+  flex: 1 0 270px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-block: 4px 16px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.new-scale-column:hover {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+.new-scale-column:active { background: var(--bg-muted); }
+.new-scale-label { user-select: none; }
 .scale-column.dimmed {
   opacity: 0.35;
   pointer-events: auto;
