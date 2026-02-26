@@ -1,12 +1,17 @@
-# ChromaScale v4.0.0 Plan
+# ChromaScale v4.0.0 Plan — ✅ COMPLETE
+
+> **Status**: All phases landed. Tagged v4.0.0. See CHANGELOG for the final summary.
+> Scope grew beyond the original plan: consolidated the set-management modal into the dropdown, added per-set configurable step schedules (textarea + divisor select), reworked header to three-zone, ghost "New scale" column, full-height glass scroll nav, hairline popover borders.
 
 ## Overview
 
 Two major changes:
 1. **Remove dark mode entirely** — ChromaScale becomes a mode-independent ramp generator. A scale is step 0 (white) → step 900 (dark), period. Consumers handle their own theming.
-2. **Sets + URL sharing** — multiple named workspaces ("Sets"), switchable via header dropdown + management modal. Share any set as a URL hash. Import creates a new set (non-destructive). Works identically under `file://` and HTTP.
+2. **Sets + URL sharing** — multiple named workspaces ("Sets"), switchable via header dropdown ~~+ management modal~~ (folded into dropdown). Share any set as a URL hash. Import creates a new set (non-destructive). Works identically under `file://` and HTTP.
 
 **Net LOC impact:** ~555 removed (dark mode) + ~340 added (sets + sharing) = **~215 lines lighter overall**, while gaining multi-workspace + sharing.
+
+**Actual:** configurable steps added ~200 LOC on top. Still net positive on features-per-line.
 
 ---
 

@@ -18,8 +18,9 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 | `icons.js` | Inline SVG icon library (24 icons, zero dependencies) |
 | `color-engine.js` | OKLCH ↔ sRGB color pipeline, contrast ratios, gamut clamping, spline interpolation |
 | `curve-editor.js` | Canvas-based L/C/H curve editor with interactive point manipulation |
-| `scale-manager.js` | Scale generation engine — 35-step scales with contrast constraint enforcement |
+| `scale-manager.js` | Scale generation engine — configurable-step scales with contrast constraint enforcement |
 | `figma-push.js` | Figma Variables REST API integration for pushing color variables |
+| `sets.js` | `SetStore` (multi-workspace persistence + migration) + URL encode/decode (gzip + base64url) |
 | `ui.js` | UI controller — renders all views, manages state and interactions |
 
 ### Technology Stack
@@ -38,14 +39,17 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 
 #### Layout
 - **Full viewport height**, `display: flex; flex-direction: column`
-- **Header bar**: 40px tall, fixed at top, `justify-content: space-between`
-- **Scales container**: `display: flex; overflow-x: auto; flex: 1` with `scroll-snap-type: x mandatory`, `scroll-padding-inline: 32px`, hidden scrollbar — horizontally scrollable columns with snap
-- **Scales wrapper**: Wraps the container + left/right scroll arrow buttons (positioned absolutely with gradient fade backgrounds, shown/hidden via IntersectionObserver)
+- **Header bar**: fixed at top, three-zone flex layout (left | center | actions with `flex: 1 1 0` on the outer zones for true centering)
+- **Scales container**: `display: flex; overflow-x: auto; flex: 1` with `scroll-snap-type: inline mandatory`, 32px inline padding (matches header gutter), hidden scrollbar — horizontally scrollable columns with snap
+- **Scales wrapper**: Wraps the container + full-height left/right scroll arrows (tinted-glass `backdrop-filter: blur(12px)`, 32px resting → 64px on hover, shown/hidden via IntersectionObserver)
+- **Ghost "New scale" column**: always rendered as the last flex child. Dashed outline, centered plus + label. Same width as real columns. Click → add scale with viewport-anchored scroll restore so the ghost stays visually fixed.
 - **Curve panel** (when open): Docked to bottom, `max-height: 44vh`, slides up with animation
 
 #### Header
-- **Left**: App title "ChromaScale" (14px, weight 700, letter-spacing -0.02em) + subtitle "OKLCH color scale tool" (11px, `--text-muted`)
-- **Right**: Action buttons — "Add scale" (secondary), Settings gear (icon-only), Save (floppy disk icon), Reset (counter-clockwise arrow icon), "Export" (primary, accent-colored)
+- **Left**: App title "ChromaScale" (14px, weight 700)
+- **Center**: Set switcher dropdown (`.btn.btn-secondary` trigger with "Set:" prefix + active set name + caret), Settings button (gear + "Settings" label)
+- **Right**: Share (share icon + label), Export (primary, accent)
+- No Save/Reset buttons — state auto-saves on every mutation
 
 #### Scale Columns
 - **Min-width**: 270px, `flex: 1 0 270px`, `scroll-snap-align: start`
@@ -173,13 +177,37 @@ Each column contains:
    - Status messages (info/success/error)
 
 ### 6. Settings Popover
-**Purpose**: Global scale endpoint configuration.
+**Purpose**: Per-set generation parameters (lightness range + step schedule).
 
 #### Layout
-- Anchored below settings gear icon, `min-width: 240px`
-- **Lightness section**: Lightest point (step 0), Darkest point (step 900) — number inputs
+- Centered below settings button, `min-inline-size: 300px`, `--radius-lg` corners, hairline `--border-faint` outline
+- **Lightness section**: Lightest point (step 0), Darkest point (step 900) — number inputs. Live contrast-warning if the range is too narrow to hit WCAG thresholds.
+- **Steps section**: Textarea with comma-separated step labels (must start 0, end 900; live-validated, commits on blur/Enter). Major-step divisor select (10/25/50/100 — any label divisible by the chosen value gets full-height swatches). "N steps · M major" counter.
 
-### 7. Scale Dropdown Menu
+### 7. Set Switcher Dropdown
+**Purpose**: Switch between, manage, and create sets — all in one place (no separate modal).
+
+#### Layout
+- Centered below set switcher button, 300px, `--radius-lg`
+- **Set rows**: active-dot indicator, name + "N scales · Xh ago" meta, hover-revealed rename/duplicate/delete icon buttons. Click row body → switch + close.
+- **Inline rename**: pencil icon swaps name span for a text input (Enter commits, Esc cancels, blur commits). Space/all keys stopPropagation so the parent button's ARIA space-activate handler doesn't eat keystrokes.
+- **New set**: creates from defaults, immediately reopens dropdown with rename focused on the new row. Dropdown lives inside the header (destroyed by `_render()`), so "New set" / delete-active use close → switch → `_toggleSetDropdown(newAnchor, renameId)` pattern.
+- **Divider**: full-bleed `--hairline` `--border-faint`
+- Sorted by `modified` desc
+
+### 8. Share Dialog
+**Purpose**: Share the current set as a URL; import a shared set as a new set (non-destructive).
+
+#### Encoding
+- `#s=` hash fragment. Payload: `JSON → gzip (native CompressionStream) → base64url`. Floats rounded to 3 decimals.
+- Compact keys: `{v, name, lMax, lMin, st?, md?, scales: [{n, k, c?, h?}]}`. `st`/`md` omitted if default. `c`/`h` omitted if unchanged from `_initCurves()` output (epsilon 1e-4).
+
+#### Flow
+- Full URL + params-only fields with copy buttons
+- Paste field accepts full URLs, `#s=...`, `s=...`, or bare encoded strings
+- Import → confirmation modal (editable name pre-filled from payload, "N scales · M keys" summary) → `store.create()` → `switchTo()` → toast. URL hash cleared via `replaceState` to survive reload without re-prompting.
+
+### 9. Scale Dropdown Menu
 **Purpose**: Per-scale actions.
 
 #### Layout
@@ -230,10 +258,26 @@ Each column contains:
 ## State Management
 
 ### Primary State
-- `ScaleManager.scales[]` — Array of `Scale` objects
-- `ScaleManager.selectedId` — Currently selected scale (for curve editor)
-- `ScaleManager.lightnessMax` / `lightnessMin` — Shared lightness endpoints for all scales
+- `App.store` (`SetStore`) — holds all sets, active id; persists to `localStorage`
+- `ScaleManager.scales[]` — Array of `Scale` objects (populated from active set's config)
+- `ScaleManager.selectedId` — Currently selected scale (for curve editor, UI-ephemeral, not persisted)
+- `ScaleManager.lightnessMax` / `lightnessMin` — Shared lightness endpoints for all scales in the set
+- `ScaleManager.stepLabels` / `majorDivisor` — Step generation schedule (per-set)
 - `App._openSourcePanelId` — ID of scale with open source panel (or null)
+
+### Set Object Structure
+```js
+{
+  id: "k7x2a9",              // random 6-char base36
+  name: "My Palette",
+  modified: 1708876800000,    // Date.now(), bumped on every updateActive()
+  config: {                   // = ScaleManager.toConfig() minus selectedId
+    lightnessMax, lightnessMin,
+    stepLabels, majorDivisor,
+    scales: [{ name, keyColors, curvePoints? }, …]
+  }
+}
+```
 
 ### Scale Object State
 Each `Scale` instance holds:
@@ -241,7 +285,7 @@ Each `Scale` instance holds:
 - `name` — Display name
 - `keyColors[]` — Array of hex strings (source colors, sorted by luminance descending)
 - `curvePoints.C/H` — Arrays of `{x, y}` control points for Chroma and Hue channels
-- `steps[]` — Generated 35-step array
+- `steps[]` — Generated step array (length = `manager.stepLabels.length`)
 
 ### Step Object Structure
 ```js
