@@ -219,9 +219,11 @@ Each column contains:
 - Copy button shows checkmark icon for 1.2 seconds after copy
 
 ### LocalStorage Persistence
-- Key: `chromascale-color-scales`
-- Saves: `{ lightnessMax, lightnessMin, scales: [{ name, keyColors }] }`
-- Toast notification on save/reset
+- Key: `chromascale-sets`
+- Shape: `{ v: 1, activeId, sets: [{ id, name, modified, config }] }`
+- Each set's `config` is a full `ScaleManager.toConfig()` (includes curve points — curves now persist across reloads)
+- Auto-saved on every mutation (no manual save required)
+- One-time silent migration from old key `chromascale-color-scales` on first v4 load
 
 ---
 

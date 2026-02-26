@@ -1,35 +1,48 @@
 // ChromaScale — UI Controller v3
 // Compact 35-step layout with contrast constraint enforcement
 
+const DEFAULTS = {
+  Gray: ["#faf9f5","#f5f4ed","#f0eee6","#e8e6dc","#dedcd1","#d1cfc5","#c2c0b6","#b0aea5","#9c9a92","#87867f","#73726c","#5e5d59","#4d4c48","#3d3d3a","#30302e","#262624","#1f1e1d","#1a1918","#141413"],
+  Red: ["#fceded","#f7c1c1","#f09595","#e86b6b","#e04343","#b53333","#8a2424","#5c1616","#300b0b"],
+  Orange: ["#faefeb","#f5cbbc","#f2a88f","#ed8461","#e86235","#ba4c27","#8c3619","#5e230f","#301107"],
+  Yellow: ["#faf3e8","#fae1b9","#facf89","#fabd5a","#faa72a","#c77f1a","#965b0e","#633806","#301901"],
+  Green: ["#f1f7e9","#d0e5b1","#afd47d","#90bf4e","#76ad2a","#568c1c","#386910","#214708","#0e2402"],
+  Aqua: ["#e9f7f2","#aee5d3","#7ad6b7","#4dc49c","#24b283","#188f6b","#0e6b54","#07473b","#02211c"],
+  Blue: ["#edf5fc","#bad7f5","#86b8eb","#599ee3","#2c84db","#1b67b2","#0f4b87","#06325e","#011a33"],
+  Violet: ["#f1f0ff","#cac6f5","#a49ee8","#827ade","#6258d1","#4d44ab","#383182","#26215c","#141133"],
+  Magenta: ["#fcf0f4","#f5c6d6","#f0a1bb","#e87da1","#e05a87","#b54369","#8a2d4c","#5e1c32","#2e0b17"]
+};
+
+function defaultsConfig() {
+  return {
+    lightnessMax: 1.0,
+    lightnessMin: 0.15,
+    scales: Object.entries(DEFAULTS).map(([name, keyColors]) => ({ name, keyColors }))
+  };
+}
+
 class App {
   constructor() {
     this.manager = new ScaleManager();
+    this.store = new SetStore();
     this.curveEditor = null;
     this.root = document.getElementById('app');
-    this.STORAGE_KEY = 'chromascale-color-scales';
     this._openSourcePanelId = null;
-    
-    this.DEFAULTS = {
-      Gray: ["#faf9f5","#f5f4ed","#f0eee6","#e8e6dc","#dedcd1","#d1cfc5","#c2c0b6","#b0aea5","#9c9a92","#87867f","#73726c","#5e5d59","#4d4c48","#3d3d3a","#30302e","#262624","#1f1e1d","#1a1918","#141413"],
-      Red: ["#fceded","#f7c1c1","#f09595","#e86b6b","#e04343","#b53333","#8a2424","#5c1616","#300b0b"],
-      Orange: ["#faefeb","#f5cbbc","#f2a88f","#ed8461","#e86235","#ba4c27","#8c3619","#5e230f","#301107"],
-      Yellow: ["#faf3e8","#fae1b9","#facf89","#fabd5a","#faa72a","#c77f1a","#965b0e","#633806","#301901"],
-      Green: ["#f1f7e9","#d0e5b1","#afd47d","#90bf4e","#76ad2a","#568c1c","#386910","#214708","#0e2402"],
-      Aqua: ["#e9f7f2","#aee5d3","#7ad6b7","#4dc49c","#24b283","#188f6b","#0e6b54","#07473b","#02211c"],
-      Blue: ["#edf5fc","#bad7f5","#86b8eb","#599ee3","#2c84db","#1b67b2","#0f4b87","#06325e","#011a33"],
-      Violet: ["#f1f0ff","#cac6f5","#a49ee8","#827ade","#6258d1","#4d44ab","#383182","#26215c","#141133"],
-      Magenta: ["#fcf0f4","#f5c6d6","#f0a1bb","#e87da1","#e05a87","#b54369","#8a2d4c","#5e1c32","#2e0b17"]
-    };
-    
-    // Try to load from localStorage, otherwise use defaults
-    const loaded = this._loadFromLocalStorage();
-    if (!loaded) {
-      this._loadDefaults();
+  }
+
+  async init() {
+    this.store.load();
+
+    if (this.store.sets.length === 0) {
+      const id = this.store.create('My Palette', defaultsConfig());
+      this.store.switchTo(id);
     }
-    
+
+    this._loadConfigIntoManager(this.store.getActive().config);
+
     // Start with no scale selected — curve panel hidden until user clicks
     this.manager.selectedId = null;
-    
+
     this._initTooltipSystem();
     this._render();
     this._scheduleGradientResize();
@@ -139,83 +152,27 @@ class App {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); });
   }
 
-  _loadDefaults() {
-    this.manager.scales = [];
-    for (const [name, colors] of Object.entries(this.DEFAULTS)) {
-      this.manager.addScale(name, colors);
-    }
+  _loadConfigIntoManager(config) {
+    // ScaleManager.fromConfig handles legacy property names + curve points
+    this.manager.fromConfig({
+      lightnessMax: config.lightnessMax,
+      lightnessMin: config.lightnessMin,
+      scales: config.scales,
+      selectedId: null
+    });
   }
 
-  _saveToLocalStorage() {
-    try {
-      const data = {
-        lightnessMax: this.manager.lightnessMax,
-        lightnessMin: this.manager.lightnessMin,
-        scales: this.manager.scales.map(s => ({
-          name: s.name,
-          keyColors: s.keyColors
-        }))
-      };
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
-      
-      // Show brief confirmation
-      this._showToast('Scales saved to local storage');
-    } catch (e) {
-      this._showToast('Failed to save: ' + e.message, true);
-    }
+  _saveActiveSet() {
+    // Persist full manager config (includes curve points) to the active set
+    const cfg = this.manager.toConfig();
+    delete cfg.selectedId; // UI-ephemeral, don't store
+    this.store.updateActive(cfg);
   }
 
-  _loadFromLocalStorage() {
-    try {
-      const raw = localStorage.getItem(this.STORAGE_KEY);
-      if (!raw) return false;
-
-      const data = JSON.parse(raw);
-
-      // Migration: old format was an array of per-scale objects
-      if (Array.isArray(data)) {
-        if (data.length === 0) return false;
-        // Read limits from first scale's old property names
-        const first = data[0];
-        if (first.whiteLimit != null) this.manager.lightnessMax = first.whiteLimit;
-        if (first.blackLimit != null) this.manager.lightnessMin = first.blackLimit;
-        this.manager.scales = [];
-        data.forEach(item => {
-          this.manager.addScale(item.name, item.keyColors);
-        });
-        return true;
-      }
-
-      // New format: object with scales array and top-level limits
-      if (!data.scales || data.scales.length === 0) return false;
-
-      // Read limits (try new names first, fall back to old names)
-      if (data.lightnessMax != null) this.manager.lightnessMax = data.lightnessMax;
-      else if (data.whiteLimit != null) this.manager.lightnessMax = data.whiteLimit;
-
-      if (data.lightnessMin != null) this.manager.lightnessMin = data.lightnessMin;
-      else if (data.blackLimit != null) this.manager.lightnessMin = data.blackLimit;
-
-      this.manager.scales = [];
-      data.scales.forEach(item => {
-        this.manager.addScale(item.name, item.keyColors);
-      });
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  _resetToDefaults() {
-    try {
-      localStorage.removeItem(this.STORAGE_KEY);
-    } catch (e) { /* ignore */ }
-    
-    this.manager.scales = [];
-    this.manager.lightnessMax = 1.0;
-    this.manager.lightnessMin = 0.15;
-    this._loadDefaults();
+  _resetActiveSet() {
+    this._loadConfigIntoManager(defaultsConfig());
     this.manager.selectedId = null;
+    this._saveActiveSet();
     this._render();
     this._scheduleGradientResize();
     this._showToast('Reset to defaults');
@@ -453,6 +410,7 @@ class App {
       const names = ['Custom', 'Clay', 'Teal', 'Pink', 'Lime', 'Amber'];
       const idx = this.manager.scales.length % colors.length;
       this.manager.addScale(names[idx] || 'New', colors[idx] || '#8B5CF6');
+      this._saveActiveSet();
       this._render();
     });
     
@@ -460,8 +418,11 @@ class App {
       e.stopPropagation();
       this._toggleSettingsPopover(header.querySelector('.settings-wrap'));
     });
-    header.querySelector('#btn-save').addEventListener('click', () => this._saveToLocalStorage());
-    header.querySelector('#btn-reset').addEventListener('click', () => this._resetToDefaults());
+    header.querySelector('#btn-save').addEventListener('click', () => {
+      this._saveActiveSet();
+      this._showToast('Saved');
+    });
+    header.querySelector('#btn-reset').addEventListener('click', () => this._resetActiveSet());
     header.querySelector('#btn-export').addEventListener('click', () => this._showExportModal());
   }
 
@@ -548,6 +509,7 @@ class App {
           this._setCurveEditorLReference();
           this._updateConstraintBounds(selected);
         }
+        this._saveActiveSet();
         this._render();
         // Re-open settings popover and restore focus to the active input
         const newAnchor = this.root.querySelector('.settings-wrap');
@@ -718,6 +680,7 @@ class App {
       scale.name = e.target.value;
       const panelName = document.querySelector('.curve-scale-name');
       if (panelName) panelName.textContent = scale.name;
+      this._saveActiveSet();
       // Re-render to update CSS variable prefixes for the renamed scale
       this._render();
     });
@@ -903,6 +866,7 @@ class App {
           this.manager.duplicateScale(scale.id);
           // Don't open curve editor for the new scale
           this.manager.selectedId = prevSelected;
+          this._saveActiveSet();
           this._render();
           this._scheduleGradientResize();
         }
@@ -916,6 +880,7 @@ class App {
           dropdown.remove();
     
           this.manager.removeScale(scale.id);
+          this._saveActiveSet();
           this._render();
           this._scheduleGradientResize();
         }
@@ -1028,6 +993,7 @@ class App {
 
       scale.addKeyColor('#ffffff');
       this._focusNewSourceInput = '#ffffff';
+      this._saveActiveSet();
       this._render();
     });
     footer.appendChild(addColorBtn);
@@ -1064,7 +1030,10 @@ class App {
         scale.updateKeyColor(idx, e.target.value);
         this._render();
       });
-      nativeInput.addEventListener('change', () => { this._colorPickerUndoPushed = false; });
+      nativeInput.addEventListener('change', () => {
+        this._colorPickerUndoPushed = false;
+        this._saveActiveSet();
+      });
       swatch.appendChild(nativeInput);
       
       const textInput = document.createElement('input');
@@ -1079,6 +1048,7 @@ class App {
         if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
     
           scale.updateKeyColor(idx, val.toLowerCase());
+          this._saveActiveSet();
           this._render();
         }
       });
@@ -1094,6 +1064,7 @@ class App {
           e.stopPropagation();
     
           scale.removeKeyColor(idx);
+          this._saveActiveSet();
           this._render();
         });
         row.appendChild(removeBtn);
@@ -1281,6 +1252,7 @@ class App {
       if (draggedIndex !== targetIndex) {
   
         this.manager.moveScale(dragScaleId, targetIndex);
+        this._saveActiveSet();
         this._render();
       }
     };
@@ -1557,7 +1529,10 @@ class App {
       this._updateConstraintBounds(selected);
       this._updateSwatches(selected);
     });
-    canvasContainer.addEventListener('mouseup', () => { this._curveUndoPushed = false; });
+    canvasContainer.addEventListener('mouseup', () => {
+      this._curveUndoPushed = false;
+      this._saveActiveSet();
+    });
 
     // Set L as non-interactive reference line (linear schedule)
     this._setCurveEditorLReference();
@@ -1890,6 +1865,7 @@ class App {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   window.app = new App();
+  await window.app.init();
 });
