@@ -271,7 +271,31 @@ class App {
 
     modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
 
-    const renderList = () => {
+    const openRename = (info, s) => {
+      const nameEl = info.querySelector('[data-name]');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'set-rename-input';
+      input.value = s.name;
+      nameEl.replaceWith(input);
+      input.focus(); input.select();
+      const commit = () => {
+        const val = input.value.trim() || s.name;
+        this.store.rename(s.id, val);
+        if (s.id === this.store.activeId) {
+          const label = document.querySelector('.set-switcher-name');
+          if (label) label.textContent = val;
+        }
+        renderList();
+      };
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = s.name; input.blur(); }
+      });
+    };
+
+    const renderList = (renameId = null) => {
       const list = modal.querySelector('.sets-list');
       list.innerHTML = '';
       const activeId = this.store.activeId;
@@ -282,13 +306,10 @@ class App {
         card.className = 'set-card' + (s.id === activeId ? ' set-card-active' : '');
         card.dataset.setId = s.id;
 
-        // swatch strip: first scale's steps 100/300/500/700/900 (approx indices)
         const strip = document.createElement('div');
         strip.className = 'set-swatch-strip';
         const first = s.config.scales[0];
         if (first) {
-          // We don't have live Scale objects here — use key colors as a rough preview.
-          // Pick 5 evenly-spaced key colors (or fewer if <5 keys).
           const kc = first.keyColors;
           const pick = kc.length <= 5 ? kc : [0,1,2,3,4].map(i => kc[Math.floor(i * (kc.length-1) / 4)]);
           pick.forEach(hex => {
@@ -318,30 +339,7 @@ class App {
           return b;
         };
 
-        actions.appendChild(mkBtn('pencil', 'Rename', () => {
-          const nameEl = info.querySelector('[data-name]');
-          const input = document.createElement('input');
-          input.type = 'text';
-          input.className = 'set-rename-input';
-          input.value = s.name;
-          nameEl.replaceWith(input);
-          input.focus(); input.select();
-          const commit = () => {
-            const val = input.value.trim() || s.name;
-            this.store.rename(s.id, val);
-            if (s.id === activeId) {
-              // update header switcher label too
-              const label = document.querySelector('.set-switcher-name');
-              if (label) label.textContent = val;
-            }
-            renderList();
-          };
-          input.addEventListener('blur', commit);
-          input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-            if (e.key === 'Escape') { input.value = s.name; input.blur(); }
-          });
-        }));
+        actions.appendChild(mkBtn('pencil', 'Rename', () => openRename(info, s)));
 
         actions.appendChild(mkBtn('copy', 'Duplicate', () => {
           this.store.duplicate(s.id);
@@ -353,7 +351,6 @@ class App {
           const wasActive = s.id === this.store.activeId;
           this.store.delete(s.id);
           if (wasActive) {
-            // active set was deleted — SetStore already picked a new activeId
             this._loadConfigIntoManager(this.store.getActive().config);
             this.manager.selectedId = null;
             this._openSourcePanelId = null;
@@ -369,7 +366,6 @@ class App {
         card.appendChild(info);
         card.appendChild(actions);
 
-        // Click on card body → open
         card.addEventListener('click', (e) => {
           if (e.target.closest('.set-card-actions') || e.target.closest('.set-rename-input')) return;
           if (s.id !== this.store.activeId) this._switchSet(s.id);
@@ -377,6 +373,11 @@ class App {
         });
 
         list.appendChild(card);
+
+        if (s.id === renameId) {
+          card.scrollIntoView({ block: 'nearest' });
+          openRename(info, s);
+        }
       });
     };
 
@@ -385,8 +386,9 @@ class App {
     modal.querySelector('#btn-new-set').addEventListener('click', () => {
       const id = this.store.create('Untitled', defaultsConfig());
       this._switchSet(id);
-      overlay.remove();
-      this._showToast('New set created');
+      // Modal survives _render() (it lives on document.body, not this.root).
+      // Re-render the list with the new card in rename mode.
+      renderList(id);
     });
   }
 
