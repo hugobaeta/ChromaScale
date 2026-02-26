@@ -286,7 +286,7 @@
 
   <div class="demo-box">
     <div class="ds-inline">
-      <input type="number" class="control-input" value="1.00" style="inline-size:70px">
+      <input type="number" class="field field-mono control-input" value="1.00" style="inline-size:70px">
       <input type="text" class="hex-input" value="#D97757" style="inline-size:80px">
       <input type="text" class="scale-name-input" value="Blue" style="inline-size:100px">
     </div>
@@ -463,7 +463,9 @@
           </div>
         </div>
         <div class="dropdown-divider"></div>
-        <button class="dropdown-item"><span class="dropdown-item-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="dropdown-item-label">New set</span></button>
+        <div class="set-dropdown-list">
+          <button class="dropdown-item set-new-item"><span class="dropdown-item-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></span><span class="dropdown-item-label">New set</span></button>
+        </div>
       </div>
     </div>
     <div class="note" style="margin-block-start:8px"><span class="cls">.set-switcher</span> (btn-secondary variant) &middot; <span class="cls">.set-dropdown</span> &gt; <span class="cls">.set-dropdown-list</span> &gt; <span class="cls">.set-item</span> (<span class="cls">.set-item-active</span>) &gt; <span class="cls">.set-item-main</span> + <span class="cls">.set-item-actions</span> &middot; "New set" reopens dropdown with rename input focused</div>
@@ -477,11 +479,11 @@
         <div class="settings-popover-body">
           <div class="settings-row">
             <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
-            <input type="number" class="control-input" value="1.00" style="inline-size:70px">
+            <input type="number" class="field field-mono control-input" value="1.00" style="inline-size:70px">
           </div>
           <div class="settings-row">
             <label class="settings-label">Darkest point <span class="settings-hint">(step 900)</span></label>
-            <input type="number" class="control-input" value="0.15" style="inline-size:70px">
+            <input type="number" class="field field-mono control-input" value="0.15" style="inline-size:70px">
           </div>
           <div class="settings-warning">Steps 300&ndash;900 only achieve 4.2:1 (needs 7:1 for AAA). Widen the lightness range.</div>
         </div>
@@ -490,10 +492,10 @@
         <div class="settings-popover-header">Steps</div>
         <div class="settings-popover-body">
           <label class="settings-label">Step labels <span class="settings-hint">(comma-separated, must start at 0 and end at 900)</span></label>
-          <textarea class="settings-textarea" rows="3" spellcheck="false">0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900</textarea>
+          <textarea class="field field-mono settings-textarea" rows="3" spellcheck="false">0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 810, 820, 830, 840, 850, 860, 870, 880, 890, 900</textarea>
           <div class="settings-row">
             <label class="settings-label">Major steps <span class="settings-hint">(labels divisible by)</span></label>
-            <select class="control-input">
+            <select class="field control-input">
               <option>Every 10</option>
               <option>Every 25</option>
               <option selected>Every 50</option>
@@ -528,7 +530,7 @@
       <div class="modal-body">
         <div class="export-version-selector">
           <label for="tw-version-demo">Tailwind version:</label>
-          <select id="tw-version-demo" class="export-select">
+          <select id="tw-version-demo" class="field export-select">
             <option value="v4" selected>v4 (CSS-based)</option>
             <option value="v3">v3 (JS config)</option>
           </select>
@@ -561,14 +563,14 @@
         <div class="share-section">
           <div class="share-label">Full URL</div>
           <div class="share-row">
-            <input class="share-field" type="text" readonly value="file:///…/index.html#s=eyJ2IjoxLCJuYW1lIjoi…">
+            <input class="field field-mono share-field" type="text" readonly value="file:///…/index.html#s=eyJ2IjoxLCJuYW1lIjoi…">
             <button class="btn btn-secondary" onclick="return false">Copy</button>
           </div>
         </div>
         <div class="share-section">
-          <div class="share-label">Parameters only</div>
+          <div class="share-label">Parameters</div>
           <div class="share-row">
-            <input class="share-field" type="text" readonly value="eyJ2IjoxLCJuYW1lIjoi…">
+            <input class="field field-mono share-field" type="text" readonly value="eyJ2IjoxLCJuYW1lIjoi…">
             <button class="btn btn-secondary" onclick="return false">Copy</button>
           </div>
         </div>
@@ -576,7 +578,7 @@
         <div class="share-section">
           <div class="share-label">Import a set</div>
           <div class="share-row">
-            <input class="share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
+            <input class="field field-mono share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
             <button class="btn btn-primary" disabled onclick="return false">Import</button>
           </div>
         </div>
@@ -596,7 +598,7 @@
       </div>
       <div class="modal-body">
         <div class="share-label">Name</div>
-        <input class="share-field import-name-field" type="text" value="Brand 2026">
+        <input class="field share-field import-name-field" type="text" value="Brand 2026">
         <p class="import-summary">6 scales · 47 key colors</p>
         <div class="import-actions">
           <button class="btn btn-secondary" onclick="return false">Cancel</button>
@@ -717,8 +719,9 @@
       <tr><td>Validation</td><td><code>.validation-section</code> <code>.constraint-status</code> <code>.status-badge</code> <code>.pass</code> <code>.fail</code> <code>.validation-details</code> <code>.validation-summary-row</code> <code>.validation-title</code> <code>.validation-summary</code> <code>.all-pass</code> <code>.has-fails</code> <code>.contrast-list</code> <code>.contrast-item</code> <code>.contrast-fail</code> <code>.ci-more</code> <code>.ci-pair</code> <code>.ci-ratio</code> <code>.ci-status</code> <code>.ci-pass</code> <code>.ci-fail</code></td></tr>
       <tr><td>Controls</td><td><code>.control-group</code> <code>.control-label</code> <code>.control-input</code></td></tr>
       <tr><td>Toast</td><td><code>.toast-notification</code> <code>.visible</code> <code>.toast-error</code></td></tr>
-      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-select</code></td></tr>
-      <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-sm</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-step-picker</code> <code>.fap-step-chips</code> <code>.fap-step-chip</code> <code>.fap-add-step-row</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-summary-dim</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
+      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tabs-spacer</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-format-wrap</code> <code>.export-format-label</code> <code>.export-select</code></td></tr>
+      <tr><td>Form Fields</td><td><code>.field</code> <code>.field-mono</code> (shared button-style base; applied to inputs/selects/textareas alongside component-specific classes)</td></tr>
+      <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-steps-textarea</code> <code>.fap-step-error</code> <code>.fap-collections-list</code> <code>.fap-collection-item</code> <code>.fap-col-radio</code> <code>.fap-col-info</code> <code>.fap-col-name</code> <code>.fap-col-meta</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
     </tbody>
   </table>
 

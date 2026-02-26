@@ -7,7 +7,7 @@ globalThis.ColorEngine = ColorEngine;
 
 const {
   Scale, ScaleManager, getRequiredRatio,
-  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels
+  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels, formatStepColor
 } = require('../scale-manager.js');
 
 describe('DEFAULT_STEP_LABELS', () => {
@@ -299,6 +299,35 @@ describe('ScaleManager', () => {
     const css = mgr.exportAllCSS();
     assert.ok(css.includes(':root'));
     assert.ok(css.includes('--blue-'));
+  });
+
+  it('exportAllCSS respects color format', () => {
+    const mgr = new ScaleManager();
+    mgr.addScale('Blue', '#3b82f6');
+    assert.ok(mgr.exportAllCSS('hex').includes('#'));
+    assert.ok(mgr.exportAllCSS('rgb').includes('rgb('));
+    assert.ok(mgr.exportAllCSS('hsl').includes('hsl('));
+    assert.ok(mgr.exportAllCSS('oklch').includes('oklch('));
+  });
+
+  it('formatStepColor produces well-formed strings for each format', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('X', '#2c84db');
+    const step = s.steps.find(st => st.label === 500);
+
+    assert.match(formatStepColor(step, 'hex'), /^#[0-9A-Fa-f]{6}$/);
+    assert.match(formatStepColor(step, 'rgb'), /^rgb\(\d+ \d+ \d+\)$/);
+    assert.match(formatStepColor(step, 'hsl'), /^hsl\(\d+ \d+% \d+%\)$/);
+    assert.match(formatStepColor(step, 'oklch'), /^oklch\(0\.\d+ 0\.\d+ \d+\.\d+\)$/);
+  });
+
+  it('formatStepColor HSL is close to expected for known inputs', () => {
+    // pure white → HSL(0 0% 100%)
+    const white = { rgb: [255, 255, 255], hex: '#FFFFFF', oklch: { L: 1, C: 0, H: 0 } };
+    assert.equal(formatStepColor(white, 'hsl'), 'hsl(0 0% 100%)');
+    // pure red → HSL(0 100% 50%)
+    const red = { rgb: [255, 0, 0], hex: '#FF0000', oklch: { L: 0.63, C: 0.26, H: 29 } };
+    assert.equal(formatStepColor(red, 'hsl'), 'hsl(0 100% 50%)');
   });
 
   it('exportAllJSON produces valid JSON', () => {

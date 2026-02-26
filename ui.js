@@ -371,8 +371,12 @@ class App {
     divider.className = 'dropdown-divider';
     dd.appendChild(divider);
 
+    // Footer list — same wrapper class as the items so spacing/padding match
+    const footer = document.createElement('div');
+    footer.className = 'set-dropdown-list';
+
     const newBtn = document.createElement('button');
-    newBtn.className = 'dropdown-item';
+    newBtn.className = 'dropdown-item set-new-item';
     newBtn.innerHTML = `<span class="dropdown-item-icon">${icon('plus',14)}</span><span class="dropdown-item-label">New set</span>`;
     newBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -381,7 +385,8 @@ class App {
       this._switchSet(id);
       reopenAt(id);
     });
-    dd.appendChild(newBtn);
+    footer.appendChild(newBtn);
+    dd.appendChild(footer);
 
     anchor.appendChild(dd);
 
@@ -475,6 +480,8 @@ class App {
     const payload = this._buildSharePayload();
     const encoded = await encodeSet(payload);
     const fullUrl = location.href.split('#')[0] + '#s=' + encoded;
+    // file:// URLs are useless to share — skip that section entirely.
+    const showFullUrl = !fullUrl.startsWith('file://');
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -488,17 +495,18 @@ class App {
         <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
       </div>
       <div class="modal-body">
+        ${showFullUrl ? `
         <div class="share-section">
           <div class="share-label">Full URL</div>
           <div class="share-row">
-            <input class="share-field" type="text" readonly value="${fullUrl}">
+            <input class="field field-mono share-field" type="text" readonly value="${fullUrl}">
             <button class="btn btn-secondary btn-copy-share" data-copy="url">${icon('copy',14)} Copy</button>
           </div>
-        </div>
+        </div>` : ''}
         <div class="share-section">
-          <div class="share-label">Parameters only</div>
+          <div class="share-label">Parameters</div>
           <div class="share-row">
-            <input class="share-field" type="text" readonly value="${encoded}">
+            <input class="field field-mono share-field" type="text" readonly value="${encoded}">
             <button class="btn btn-secondary btn-copy-share" data-copy="params">${icon('copy',14)} Copy</button>
           </div>
         </div>
@@ -506,7 +514,7 @@ class App {
         <div class="share-section">
           <div class="share-label">Import a set</div>
           <div class="share-row">
-            <input class="share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
+            <input class="field field-mono share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
             <button class="btn btn-primary" id="btn-import-share" disabled>Import</button>
           </div>
         </div>
@@ -578,7 +586,7 @@ class App {
       </div>
       <div class="modal-body">
         <div class="share-label">Name</div>
-        <input class="share-field import-name-field" type="text" value="${payload.name || 'Imported'}">
+        <input class="field share-field import-name-field" type="text" value="${payload.name || 'Imported'}">
         <p class="import-summary">${scaleCount} ${scaleCount === 1 ? 'scale' : 'scales'} · ${keyCount} key ${keyCount === 1 ? 'color' : 'colors'}</p>
         <div class="import-actions">
           <button class="btn btn-secondary" id="btn-import-cancel">Cancel</button>
@@ -911,12 +919,12 @@ class App {
         <div class="settings-popover-body">
           <div class="settings-row">
             <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
-            <input type="number" class="control-input" id="settings-white-limit"
+            <input type="number" class="field field-mono control-input" id="settings-white-limit"
               value="${whiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
           </div>
           <div class="settings-row">
             <label class="settings-label">Darkest point <span class="settings-hint">(step 900)</span></label>
-            <input type="number" class="control-input" id="settings-black-limit"
+            <input type="number" class="field field-mono control-input" id="settings-black-limit"
               value="${blackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
           </div>
           <div class="settings-warning" id="settings-light-warning"></div>
@@ -926,11 +934,11 @@ class App {
         <div class="settings-popover-header">Steps</div>
         <div class="settings-popover-body">
           <label class="settings-label">Step labels <span class="settings-hint">(comma-separated, must start at 0 and end at 900)</span></label>
-          <textarea class="settings-textarea" id="settings-steps" rows="3" spellcheck="false">${stepsText}</textarea>
+          <textarea class="field field-mono settings-textarea" id="settings-steps" rows="3" spellcheck="false">${stepsText}</textarea>
           <div class="settings-warning" id="settings-steps-warning" hidden></div>
           <div class="settings-row">
             <label class="settings-label">Major steps <span class="settings-hint">(labels divisible by)</span></label>
-            <select class="control-input" id="settings-divisor">
+            <select class="field control-input" id="settings-divisor">
               <option value="10"${divisor === 10 ? ' selected' : ''}>Every 10</option>
               <option value="25"${divisor === 25 ? ' selected' : ''}>Every 25</option>
               <option value="50"${divisor === 50 ? ' selected' : ''}>Every 50</option>
@@ -2256,14 +2264,16 @@ class App {
     const mimeMap = { css: 'text/css', 'w3c': 'application/json', tailwind: 'text/plain' };
 
     const getTailwindVersion = () => modal.querySelector('#tailwind-version')?.value || 'v4';
+    const getColorFormat = () => modal.querySelector('#export-color-format')?.value || 'hex';
 
     const getContent = (key) => {
-      if (key === 'css') return this.manager.exportAllCSS();
-      if (key === 'w3c') return this.manager.exportW3CTokens();
+      const fmt = getColorFormat();
+      if (key === 'css') return this.manager.exportAllCSS(fmt);
+      if (key === 'w3c') return this.manager.exportW3CTokens(fmt);
       if (key === 'tailwind') {
         return getTailwindVersion() === 'v3'
-          ? this.manager.exportTailwindV3()
-          : this.manager.exportTailwindV4();
+          ? this.manager.exportTailwindV3(fmt)
+          : this.manager.exportTailwindV4(fmt);
       }
       return '';
     };
@@ -2277,9 +2287,21 @@ class App {
       });
     };
 
+    const setName = this.store.getActive().name;
+    // Shared color-format selector — lives in the tabs bar so it's visible
+    // across all code tabs. Hidden via CSS when the figma-api tab is active.
+    const formatSelect = `
+      <select id="export-color-format" class="field export-select">
+        <option value="hex" selected>Hex</option>
+        <option value="rgb">RGB</option>
+        <option value="hsl">HSL</option>
+        <option value="oklch">OKLCH</option>
+      </select>
+    `;
+
     modal.innerHTML = `
       <div class="modal-header">
-        <h2 class="modal-title">Export scales</h2>
+        <h2 class="modal-title">Export "${setName}"</h2>
         <button class="btn-icon btn-close-modal">
           ${icon('x',16)}
         </button>
@@ -2289,6 +2311,11 @@ class App {
         <button class="modal-tab" data-tab="w3c">W3C Design Tokens</button>
         <button class="modal-tab" data-tab="tailwind">Tailwind</button>
         <button class="modal-tab" data-tab="figma-api">Figma API</button>
+        <div class="modal-tabs-spacer"></div>
+        <div class="export-format-wrap" id="export-format-wrap">
+          <label for="export-color-format" class="export-format-label">Format:</label>
+          ${formatSelect}
+        </div>
       </div>
       <div class="modal-body">
         <div class="export-section" data-panel="css">
@@ -2317,7 +2344,7 @@ class App {
         <div class="export-section" data-panel="tailwind" style="display:none">
           <div class="export-version-selector">
             <label for="tailwind-version">Tailwind version:</label>
-            <select id="tailwind-version" class="export-select">
+            <select id="tailwind-version" class="field export-select">
               <option value="v4" selected>v4 (CSS-based)</option>
               <option value="v3">v3 (JS config)</option>
             </select>
@@ -2350,18 +2377,24 @@ class App {
       if (pre) pre.textContent = getContent('tailwind');
     });
 
+    // Color format selector refreshes all code panels
+    modal.querySelector('#export-color-format')?.addEventListener('change', refreshContent);
+
     modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
     document.addEventListener('keydown', function escHandler(e) {
       if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
     });
 
     // Tab switching
+    const formatWrap = modal.querySelector('#export-format-wrap');
     modal.querySelectorAll('.modal-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         modal.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         modal.querySelectorAll('.export-section').forEach(s => s.style.display = 'none');
         modal.querySelector(`[data-panel="${tab.dataset.tab}"]`).style.display = '';
+        // Format selector only applies to code exports, not Figma
+        formatWrap.hidden = (tab.dataset.tab === 'figma-api');
       });
     });
 

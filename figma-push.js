@@ -14,6 +14,30 @@ class FigmaPusher {
   _majorSteps(mgr) { return mgr.majorSteps(); }
   _allSteps(mgr) { return [...mgr.stepLabels]; }
 
+  // Fetch existing variable collections from the file.
+  // Returns [{ id, name, modes: [{modeId, name}], variableCount, defaultModeId }]
+  // Throws on network/auth errors with a useful message.
+  async fetchCollections(pat, fileKey) {
+    const res = await fetch(`https://api.figma.com/v1/files/${fileKey}/variables/local`, {
+      headers: { 'X-Figma-Token': pat }
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Figma API ${res.status}: ${body.slice(0, 200)}`);
+    }
+    const data = await res.json();
+    const collections = data.meta?.variableCollections || {};
+    return Object.values(collections)
+      .filter(c => !c.remote) // only local (editable) collections
+      .map(c => ({
+        id: c.id,
+        name: c.name,
+        modes: c.modes || [],
+        defaultModeId: c.defaultModeId,
+        variableCount: (c.variableIds || []).length
+      }));
+  }
+
   // Extract file key from URL or raw key
   parseFileKey(input) {
     if (!input) return null;
@@ -32,10 +56,14 @@ class FigmaPusher {
     return { r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255, a: 1 };
   }
 
-  // Build the API payload for creating variables
-  buildPayload(scales, selectedSteps, collectionName) {
-    const colId = 'tmp_col_' + Date.now();
-    const modeId = 'tmp_mode_default';
+  // Build the API payload for creating variables.
+  // If existingCollection is passed ({id, defaultModeId}), variables are
+  // CREATEd into that collection using its real id + default mode id.
+  // Otherwise a fresh collection is CREATEd with a temp id.
+  buildPayload(scales, selectedSteps, collectionName, existingCollection = null) {
+    const useExisting = !!existingCollection;
+    const colId = useExisting ? existingCollection.id : 'tmp_col_' + Date.now();
+    const modeId = useExisting ? existingCollection.defaultModeId : 'tmp_mode_default';
 
     const variables = [];
     const modeValues = [];
@@ -55,7 +83,6 @@ class FigmaPusher {
           resolvedType: 'COLOR'
         });
 
-        // Try to use pre-generated steps first, fall back to sampling
         const existing = scale.steps.find(s => s.label === stepLabel);
         const hex = existing ? existing.hex : scale.sampleStep(stepLabel).hex;
 
@@ -67,24 +94,33 @@ class FigmaPusher {
       });
     });
 
-    return {
-      variableCollections: [{
+    const payload = {
+      variables,
+      variableModeValues: modeValues
+    };
+
+    if (useExisting) {
+      // Just add variables into the existing collection; no collection/mode ops
+      payload.variableCollections = [];
+      payload.variableModes = [];
+    } else {
+      payload.variableCollections = [{
         action: 'CREATE',
         id: colId,
         name: collectionName || 'Colors',
         initialModeId: modeId
-      }],
-      variableModes: [
+      }];
+      payload.variableModes = [
         { action: 'UPDATE', id: modeId, name: 'Default', variableCollectionId: colId }
-      ],
-      variables,
-      variableModeValues: modeValues
-    };
+      ];
+    }
+
+    return payload;
   }
 
   // Push to Figma API
-  async push(pat, fileKey, scales, selectedSteps, collectionName) {
-    const payload = this.buildPayload(scales, selectedSteps, collectionName);
+  async push(pat, fileKey, scales, selectedSteps, collectionName, existingCollection = null) {
+    const payload = this.buildPayload(scales, selectedSteps, collectionName, existingCollection);
 
     const res = await fetch(`https://api.figma.com/v1/files/${fileKey}/variables`, {
       method: 'POST',
@@ -110,8 +146,8 @@ class FigmaPusher {
   }
 
   // Generate a curl command as fallback
-  generateCurl(pat, fileKey, scales, selectedSteps, collectionName) {
-    const payload = this.buildPayload(scales, selectedSteps, collectionName);
+  generateCurl(pat, fileKey, scales, selectedSteps, collectionName, existingCollection = null) {
+    const payload = this.buildPayload(scales, selectedSteps, collectionName, existingCollection);
     const json = JSON.stringify(payload);
     // Escape single quotes for shell
     const escaped = json.replace(/'/g, "'\\''");
@@ -138,15 +174,43 @@ class FigmaPusher {
 
     // State
     let stepPreset = savedStepsPref;
-    let selectedSteps = stepPreset === 'all' ? [...ALL] : [...MAJOR];
-    let customSteps = [...ALL]; // for custom mode, start with all
+    // Migrate: old chip-picker saved JSON.stringify(array) → "[0,50,...]".
+    // Strip brackets if present so parsing works with the new plain-text format.
+    let customStepsText = (this.loadPref(this.STORAGE_KEY_STEPS + '-list') || ALL.join(', '))
+      .replace(/^\s*\[|\]\s*$/g, '');
+    let selectedSteps;
+    let stepError = '';
 
-    if (savedStepsPref === 'custom') {
+    // Collection state: null = create new with name input; object = target existing
+    let loadedCollections = null;  // null = not loaded yet; [] = loaded, empty; [...] = loaded
+    let targetCollection = null;   // {id, name, defaultModeId, variableCount} when using existing
+    let collectionLoadError = '';
+
+    // Parse step selection from current preset + validate custom text
+    const resolveSteps = () => {
+      stepError = '';
+      if (stepPreset === 'major') return [...MAJOR];
+      if (stepPreset === 'all') return [...ALL];
+      // custom — parse the textarea (same validator as settings popover)
       try {
-        const parsed = JSON.parse(this.loadPref(this.STORAGE_KEY_STEPS + '-list'));
-        if (Array.isArray(parsed)) { customSteps = parsed; selectedSteps = parsed; }
-      } catch(e) {}
-    }
+        // For Figma export we don't need the 0/900 endpoint rule — any subset
+        // is valid. So parse manually: ints 0–900, sorted/deduped.
+        const raw = customStepsText.split(/[,\s]+/).filter(Boolean);
+        if (raw.length === 0) throw new Error('No steps');
+        const nums = raw.map(s => {
+          const n = Number(s);
+          if (!Number.isInteger(n) || n < 0 || n > 900) {
+            throw new Error(`Invalid step "${s}"`);
+          }
+          return n;
+        });
+        return [...new Set(nums)].sort((a, b) => a - b);
+      } catch (e) {
+        stepError = e.message;
+        return [];
+      }
+    };
+    selectedSteps = resolveSteps();
 
     const render = () => {
       const scaleCount = manager.scales.length;
@@ -195,10 +259,7 @@ class FigmaPusher {
             ${icon('folders',13)}
             Collection
           </div>
-          <div class="fap-field">
-            <label class="fap-label">Collection name</label>
-            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(savedCollection)}">
-          </div>
+          ${this._renderCollectionSection(savedCollection, loadedCollections, targetCollection, collectionLoadError)}
           <div class="fap-field">
             <label class="fap-label">Variable naming</label>
             <div class="fap-naming-preview">
@@ -217,17 +278,22 @@ class FigmaPusher {
             Steps
           </div>
           <div class="fap-step-presets">
-            <button class="btn ${stepPreset === 'major' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="major">
+            <button class="btn btn-sm ${stepPreset === 'major' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="major">
               Major (${MAJOR.length})
             </button>
-            <button class="btn ${stepPreset === 'all' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="all">
+            <button class="btn btn-sm ${stepPreset === 'all' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="all">
               All (${ALL.length})
             </button>
-            <button class="btn ${stepPreset === 'custom' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="custom">
+            <button class="btn btn-sm ${stepPreset === 'custom' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="custom">
               Custom
             </button>
           </div>
-          ${stepPreset === 'custom' ? this._renderStepPicker(customSteps, MAJOR) : ''}
+          <textarea class="field field-mono fap-steps-textarea" id="fap-custom-steps" rows="3"
+            spellcheck="false" ${stepPreset !== 'custom' ? 'readonly' : ''}
+            placeholder="0, 50, 100, 200, …">${this._escHtml(
+              stepPreset === 'custom' ? customStepsText : selectedSteps.join(', ')
+            )}</textarea>
+          ${stepError ? `<div class="fap-step-error">${this._escHtml(stepError)}</div>` : ''}
         </div>
 
         <div class="fap-section fap-summary">
@@ -284,61 +350,102 @@ class FigmaPusher {
       container.querySelectorAll('.fap-preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           stepPreset = btn.dataset.preset;
-          if (stepPreset === 'major') selectedSteps = [...MAJOR];
-          else if (stepPreset === 'all') selectedSteps = [...ALL];
-          else selectedSteps = [...customSteps];
           this.savePref(this.STORAGE_KEY_STEPS, stepPreset);
+          selectedSteps = resolveSteps();
           render();
         });
       });
 
-      // Custom step toggles
+      // Custom steps textarea — live-validate, save on input.
+      // Textarea is always rendered now (readonly for presets) but only
+      // editable + persisted in custom mode.
+      const ta = container.querySelector('#fap-custom-steps');
       if (stepPreset === 'custom') {
-        container.querySelectorAll('.fap-step-chip').forEach(chip => {
-          chip.addEventListener('click', () => {
-            const step = parseInt(chip.dataset.step);
-            const idx = customSteps.indexOf(step);
-            if (idx >= 0) customSteps.splice(idx, 1);
-            else { customSteps.push(step); customSteps.sort((a, b) => a - b); }
-            selectedSteps = [...customSteps];
-            this.savePref(this.STORAGE_KEY_STEPS + '-list', JSON.stringify(customSteps));
-            render();
-          });
+        ta.addEventListener('input', () => {
+          customStepsText = ta.value;
+          this.savePref(this.STORAGE_KEY_STEPS + '-list', customStepsText);
+          selectedSteps = resolveSteps();
+          // Update just the error + summary without a full re-render to keep focus
+          const errEl = container.querySelector('.fap-step-error');
+          if (stepError) {
+            if (errEl) errEl.textContent = stepError;
+            else ta.insertAdjacentHTML('afterend', `<div class="fap-step-error">${this._escHtml(stepError)}</div>`);
+          } else if (errEl) {
+            errEl.remove();
+          }
+          const countEls = container.querySelectorAll('.fap-summary-count');
+          if (countEls.length >= 3) {
+            countEls[1].textContent = selectedSteps.length;
+            countEls[2].textContent = manager.scales.length * selectedSteps.length;
+          }
         });
-
-        // Add custom step
-        const addBtn = container.querySelector('#fap-add-custom-step');
-        const addInput = container.querySelector('#fap-custom-step-input');
-        if (addBtn && addInput) {
-          const doAdd = () => {
-            const val = parseInt(addInput.value);
-            if (isNaN(val) || val < 0 || val > 900) return;
-            if (!customSteps.includes(val)) {
-              customSteps.push(val);
-              customSteps.sort((a, b) => a - b);
-              selectedSteps = [...customSteps];
-              this.savePref(this.STORAGE_KEY_STEPS + '-list', JSON.stringify(customSteps));
-            }
-            addInput.value = '';
-            render();
-          };
-          addBtn.addEventListener('click', doAdd);
-          addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAdd(); });
-        }
+      } else {
+        // Clicking the readonly textarea when on a preset switches to custom
+        // pre-filled with that preset's values — quick path from preset→edit.
+        ta.addEventListener('click', () => {
+          customStepsText = selectedSteps.join(', ');
+          stepPreset = 'custom';
+          this.savePref(this.STORAGE_KEY_STEPS, 'custom');
+          this.savePref(this.STORAGE_KEY_STEPS + '-list', customStepsText);
+          render();
+        });
       }
+
+      // Collection: load existing collections
+      const loadBtn = container.querySelector('#fap-load-collections');
+      if (loadBtn) {
+        loadBtn.addEventListener('click', async () => {
+          const pat = container.querySelector('#fap-pat').value.trim();
+          const fileKey = this.parseFileKey(container.querySelector('#fap-file').value);
+          if (!pat || !fileKey) {
+            collectionLoadError = 'Enter token and file URL first';
+            render();
+            return;
+          }
+          loadBtn.disabled = true;
+          loadBtn.innerHTML = icon('spinner',13) + ' Loading…';
+          loadBtn.querySelector('svg').style.animation = 'spin 1s linear infinite';
+          collectionLoadError = '';
+          try {
+            loadedCollections = await this.fetchCollections(pat, fileKey);
+          } catch (e) {
+            loadedCollections = null;
+            const msg = e.message || String(e);
+            collectionLoadError = msg.includes('Failed to fetch') || msg.includes('CORS')
+              ? 'CORS blocked — try running this over HTTP instead of file://'
+              : msg;
+          }
+          render();
+        });
+      }
+
+      // Collection: pick an existing one
+      container.querySelectorAll('.fap-collection-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const colId = item.dataset.colId;
+          if (colId === '__new__') {
+            targetCollection = null;
+          } else {
+            targetCollection = loadedCollections.find(c => c.id === colId);
+          }
+          render();
+        });
+      });
 
       // Push button
       container.querySelector('#fap-push').addEventListener('click', async () => {
         const pat = container.querySelector('#fap-pat').value.trim();
         const fileRaw = container.querySelector('#fap-file').value.trim();
         const fileKey = this.parseFileKey(fileRaw);
-        const collection = container.querySelector('#fap-collection').value.trim() || 'Colors';
+        // #fap-collection is absent when targeting an existing collection
+        const collectionInput = container.querySelector('#fap-collection');
+        const collection = collectionInput ? (collectionInput.value.trim() || 'Colors') : 'Colors';
         const remember = container.querySelector('#fap-remember').checked;
 
         // Save preferences
         this.savePref(this.STORAGE_KEY_PAT, remember ? pat : '');
         this.savePref(this.STORAGE_KEY_FILE, fileRaw);
-        this.savePref(this.STORAGE_KEY_COLLECTION, collection);
+        if (collectionInput) this.savePref(this.STORAGE_KEY_COLLECTION, collection);
 
         const statusEl = container.querySelector('#fap-status');
 
@@ -350,13 +457,14 @@ class FigmaPusher {
         pushBtn.disabled = true;
         pushBtn.innerHTML = icon('spinner',15) + ' Pushing…';
           pushBtn.querySelector('svg').style.animation = 'spin 1s linear infinite';
-        this._showStatus(statusEl, 'info', `Creating ${manager.scales.length * selectedSteps.length} variables in "${collection}"…`);
+        const targetDesc = targetCollection ? `existing collection "${targetCollection.name}"` : `new collection "${collection}"`;
+        this._showStatus(statusEl, 'info', `Creating ${manager.scales.length * selectedSteps.length} variables in ${targetDesc}…`);
 
         try {
-          const result = await this.push(pat, fileKey, manager.scales, selectedSteps, collection);
+          const result = await this.push(pat, fileKey, manager.scales, selectedSteps, collection, targetCollection);
           pushBtn.innerHTML = icon('check',15) + ' Done!';
           this._showStatus(statusEl, 'success',
-            `✓ Created ${result.variablesCreated} variables in "${collection}". ` +
+            `✓ Created ${result.variablesCreated} variables in ${targetDesc}. ` +
             `<a href="https://www.figma.com/design/${fileKey}" target="_blank" rel="noopener">Open file ↗</a>`
           );
         } catch (err) {
@@ -379,10 +487,11 @@ class FigmaPusher {
         const pat = container.querySelector('#fap-pat').value.trim() || '<YOUR_PAT>';
         const fileRaw = container.querySelector('#fap-file').value.trim();
         const fileKey = this.parseFileKey(fileRaw) || '<FILE_KEY>';
-        const collection = container.querySelector('#fap-collection').value.trim() || 'Colors';
+        const collectionInput = container.querySelector('#fap-collection');
+        const collection = collectionInput ? (collectionInput.value.trim() || 'Colors') : 'Colors';
         const statusEl = container.querySelector('#fap-status');
 
-        const curl = this.generateCurl(pat, fileKey, manager.scales, selectedSteps, collection);
+        const curl = this.generateCurl(pat, fileKey, manager.scales, selectedSteps, collection, targetCollection);
         navigator.clipboard.writeText(curl).then(() => {
           this._showStatus(statusEl, 'success', 'Curl command copied to clipboard. Paste it in your terminal.');
         }).catch(() => {
@@ -395,31 +504,69 @@ class FigmaPusher {
     render();
   }
 
-  _renderStepPicker(customSteps, majorSteps) {
-    // All possible steps we show as toggleable chips
-    const allPossible = [
-      0, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100,
-      125, 150, 175, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750,
-      800, 810, 820, 825, 830, 840, 850, 860, 870, 875, 880, 890, 900
-    ];
-    // Merge any custom steps into the list
-    const merged = [...new Set([...allPossible, ...customSteps])].sort((a, b) => a - b);
-    const majorSet = new Set(majorSteps);
-
+  // Collection section markup — switches between:
+  //   (a) not loaded: name input + "Load existing collections" button
+  //   (b) loaded: radio-style list (existing collections + "Create new")
+  _renderCollectionSection(savedName, loaded, target, error) {
+    // Not-yet-loaded / error → simple text input + load button
+    if (loaded === null) {
+      return `
+        <div class="fap-field">
+          <label class="fap-label">Collection name</label>
+          <div class="fap-input-row">
+            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(savedName)}">
+            <button class="btn btn-secondary btn-sm" id="fap-load-collections" data-tooltip="Fetch collections from this file">
+              ${icon('arrow-clockwise',13)} Load existing
+            </button>
+          </div>
+          ${error ? `<div class="fap-hint" style="color:var(--danger)">${this._escHtml(error)}</div>` : ''}
+        </div>
+      `;
+    }
+    // Loaded → picker list. Existing collections first, "Create new" last
+    // so it sits adjacent to the name input below.
+    const newIsActive = target === null;
     return `
-      <div class="fap-step-picker">
-        <div class="fap-step-chips">
-          ${merged.map(s => {
-            const active = customSteps.includes(s);
-            const isMajor = majorSet.has(s);
-            return `<button class="fap-step-chip ${active ? 'active' : ''} ${isMajor ? 'major' : ''}" data-step="${s}">${s}</button>`;
+      <div class="fap-field">
+        <label class="fap-label">Target collection</label>
+        <div class="fap-collections-list">
+          ${loaded.map(c => {
+            const active = target?.id === c.id;
+            const modeStr = c.modes.length > 1
+              ? `${c.modes.length} modes (${c.modes.map(m => this._escHtml(m.name)).join(', ')})`
+              : '1 mode';
+            return `
+              <button class="fap-collection-item ${active ? 'active' : ''}" data-col-id="${this._escHtml(c.id)}">
+                <span class="fap-col-radio"></span>
+                <span class="fap-col-info">
+                  <span class="fap-col-name">${this._escHtml(c.name)}</span>
+                  <span class="fap-col-meta">${c.variableCount} variables · ${modeStr}</span>
+                </span>
+              </button>
+            `;
           }).join('')}
+          <button class="fap-collection-item ${newIsActive ? 'active' : ''}" data-col-id="__new__">
+            <span class="fap-col-radio"></span>
+            <span class="fap-col-info">
+              <span class="fap-col-name">Create new</span>
+              <span class="fap-col-meta">${loaded.length === 0 ? 'No existing collections found' : ''}</span>
+            </span>
+          </button>
         </div>
-        <div class="fap-add-step-row">
-          <input type="number" class="fap-input fap-input-sm" id="fap-custom-step-input" 
-            placeholder="Custom step (0–900)" min="0" max="900" step="1">
-          <button class="btn btn-secondary btn-sm" id="fap-add-custom-step">Add</button>
-        </div>
+        ${newIsActive ? `
+          <div class="fap-input-row" style="margin-block-start:8px">
+            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(savedName)}" placeholder="New collection name">
+            <button class="btn btn-secondary btn-sm" id="fap-load-collections" data-tooltip="Reload">
+              ${icon('arrow-clockwise',13)}
+            </button>
+          </div>
+        ` : `
+          <div class="fap-hint" style="margin-block-start:8px">
+            Variables will be <strong>added</strong> to "${this._escHtml(target.name)}" using its default mode.
+            Existing variables are kept.
+            <button class="btn btn-ghost btn-sm" id="fap-load-collections" style="padding:2px 6px">${icon('arrow-clockwise',11)} Reload</button>
+          </div>
+        `}
       </div>
     `;
   }

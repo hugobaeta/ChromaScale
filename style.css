@@ -167,9 +167,90 @@ html, body {
 .header-center { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
 .app-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
 
+/* Narrow viewport: convert header to a two-row grid. Title top-left,
+   share/export top-right, set+settings span the full second row.
+   Set switcher stretches to fill any slack. */
+@media (max-width: 699px) {
+  .app-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "left actions"
+      "center center";
+    row-gap: 10px;
+    align-items: center;
+  }
+  /* grid children don't honour the flex-basis rules from above; reset them */
+  .header-left    { grid-area: left; }
+  .header-actions { grid-area: actions; }
+  .header-center  {
+    grid-area: center;
+    /* keep the internal flex; undo the flex: 0 0 auto from wide layout */
+    flex: initial;
+    justify-content: flex-start;
+  }
+  /* Both popovers anchor left since triggers are start-aligned now */
+  .set-dropdown,
+  .settings-popover {
+    inset-inline-start: 0;
+    translate: 0;
+  }
+}
+
+/* === CSS Anchor Positioning: viewport-collision-aware popovers ===
+   When supported, switch popovers to position: fixed + anchor() so the
+   browser handles overflow via position-try-fallbacks. This replaces the
+   media-query-based manual repositioning — the browser picks whichever
+   placement keeps the popover inside the viewport.
+   Base (non-anchor) absolute positioning remains as the fallback. */
+@supports (anchor-name: --x) {
+  .set-dropdown {
+    position: fixed;
+    position-anchor: --set-switcher;
+    /* reset the fallback layout's props */
+    inset: auto;
+    translate: 0;
+    /* primary placement: centered below trigger */
+    inset-block-start: calc(anchor(bottom) + 6px);
+    justify-self: anchor-center;
+    /* if that overflows inline, try left-aligned then right-aligned */
+    position-try-fallbacks:
+      --popover-start-aligned,
+      --popover-end-aligned;
+  }
+  .settings-popover {
+    position: fixed;
+    position-anchor: --settings-trigger;
+    inset: auto;
+    translate: 0;
+    inset-block-start: calc(anchor(bottom) + 6px);
+    justify-self: anchor-center;
+    position-try-fallbacks:
+      --popover-start-aligned,
+      --popover-end-aligned;
+  }
+  /* The fallback overrides that run when the primary placement overflows */
+  @position-try --popover-start-aligned {
+    justify-self: unset;
+    inset-inline-start: anchor(start);
+  }
+  @position-try --popover-end-aligned {
+    justify-self: unset;
+    inset-inline-end: anchor(end);
+  }
+  /* The narrow-viewport media query's manual overrides are superseded
+     by anchor positioning — clear them inside @supports */
+  @media (max-width: 699px) {
+    .set-dropdown,
+    .settings-popover {
+      inset-inline-start: auto;
+    }
+  }
+}
+
 /* === Set Switcher (header-center, full-featured dropdown) === */
-.set-switcher-wrap { position: relative; }
-/* .set-switcher is a .btn.btn-secondary — only override the name clipping & caret color */
+.set-switcher-wrap { position: relative; anchor-name: --set-switcher; }
+/* .set-switcher is a .btn.btn-secondary — hugs content; caret follows the name. */
 .set-switcher > svg:last-child { color: var(--text-muted); margin-inline-start: 2px; }
 .set-switcher-prefix { color: var(--text-muted); font-weight: 400; margin-inline-end: 2px; }
 .set-switcher-name {
@@ -204,11 +285,11 @@ html, body {
   margin-block: 4px;
   margin-inline: 0;
 }
-/* New set row at the bottom — override .dropdown-item's inline-size: 100%
-   so margin-inline doesn't overflow the container */
-.set-dropdown > .dropdown-item {
-  inline-size: auto;
-  margin-inline: 4px;
+/* New set row at the bottom — lives in its own .set-dropdown-list wrapper
+   so it inherits the same 4px inline padding as the set rows above. */
+.set-new-item {
+  /* .dropdown-item already has inline-size: 100% — just add height + radius */
+  min-block-size: 32px;
   border-radius: calc(var(--radius-lg) - 4px);
 }
 .set-item {
@@ -297,6 +378,161 @@ html, body {
   background: var(--bg);
 }
 
+/* === Form Fields (shared button-style base) ===
+   Inputs/selects/textareas styled to match .btn.btn-secondary: no border,
+   layered box-shadow outline (0.5px at rest, 2px accent on focus). */
+.field {
+  border: none;
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding-block: 5px; padding-inline: 10px;
+  outline: none;
+  box-shadow:
+    0 0 0 0px transparent,
+    0 0 0 0.5px var(--border),
+    0 0 0 0px transparent,
+    0 0 0 0px transparent;
+  transition:
+    box-shadow ease-out 200ms,
+    background ease-out 200ms;
+}
+.field:hover:not(:focus):not(:disabled):not(:read-only) {
+  box-shadow:
+    0 0 0 .5px var(--bg),
+    0 0 0 1.5px var(--border-strong),
+    0 0 0 0px transparent,
+    0 0 0 0px transparent;
+  transition:
+    box-shadow ease-in-out 100ms,
+    background ease-in-out 100ms;
+}
+.field:focus {
+  box-shadow:
+    0 0 0 .5px var(--bg),
+    0 0 0 1.5px var(--accent),
+    0 0 0 0px transparent,
+    0 0 0 0px transparent;
+}
+.field:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Readonly share-link fields shouldn't get the hover ring but are still selectable */
+.field:read-only { cursor: default; }
+/* Variant sizing hooks */
+.field-mono { font-family: var(--font-mono); font-size: 11px; }
+select.field { cursor: pointer; }
+/* Selects: tone down the hover ring (just a color shift, no grow), and
+   show the accent focus ring while the picker is open — mirrors how .btn
+   behaves at rest/hover/active.
+   Specificity note: base .field:hover has three :not() args = 0,5,0.
+   We need ≥ that to win, hence the extra :not(:disabled) here. */
+select.field:hover:not(:focus):not(:open):not(:disabled) {
+  box-shadow:
+    0 0 0 0px transparent,
+    0 0 0 0.5px var(--border-strong),
+    0 0 0 0px transparent,
+    0 0 0 0px transparent;
+}
+select.field:is(:open, :focus) {
+  box-shadow:
+    0 0 0 .5px var(--bg),
+    0 0 0 1.5px var(--accent),
+    0 0 0 0px transparent,
+    0 0 0 0px transparent;
+}
+
+/* === Customizable <select> (Chrome 131+, appearance: base-select) ===
+   Falls back to the browser-native select styling + .field box-shadow border
+   when not supported. The picker dropdown matches our popover look. */
+@supports (appearance: base-select) {
+  select.field,
+  select.field::picker(select) {
+    appearance: base-select;
+  }
+  /* The closed-state button — .field already handles box-shadow/radius/bg/
+     padding/font. We just balance the picker-icon spacing. */
+  select.field {
+    /* base-select strips the OS arrow region, so restore some end padding */
+    padding-inline-end: 8px;
+  }
+  /* The dropdown arrow — same caret-down path as the set switcher trigger.
+     ::picker-icon's content can't interpolate var() into a data URL, so we
+     use content:"" + background/mask to get a recolourable icon.
+     align-self keeps it on the flex cross-axis center; the 12px box is
+     square so mask-position: center puts the glyph dead-middle. */
+  select.field::picker-icon {
+    content: "";
+    inline-size: 12px;
+    block-size: 12px;
+    align-self: center;
+    margin-inline-start: 6px;
+    background-color: var(--text-muted);
+    /* Same path as icons.js caret-down */
+    --caret-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    mask: var(--caret-mask) center / contain no-repeat;
+    -webkit-mask: var(--caret-mask) center / contain no-repeat;
+    transition: background-color 0.1s;
+  }
+  select.field:hover::picker-icon,
+  select.field:open::picker-icon {
+    background-color: var(--text-secondary);
+  }
+  /* The picker panel — match our popover tokens */
+  select.field::picker(select) {
+    background: var(--bg);
+    border: var(--hairline) solid var(--border-faint);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
+    padding: 4px;
+    margin-block-start: 4px;
+    /* viewport-collision fallback — flip above if below would overflow */
+    position-try-fallbacks: flip-block;
+    /* Match dropdownIn's motion */
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+    transition:
+      opacity 0.12s ease-out,
+      transform 0.12s ease-out,
+      display 0.12s allow-discrete,
+      overlay 0.12s allow-discrete;
+  }
+  select.field::picker(select):popover-open {
+    opacity: 1;
+    transform: none;
+  }
+  @starting-style {
+    select.field::picker(select):popover-open {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+  /* Options — same treatment as .dropdown-item */
+  select.field option {
+    display: flex;
+    align-items: center;
+    padding-block: 6px; padding-inline: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  select.field option:hover,
+  select.field option:focus {
+    background: var(--bg-muted);
+  }
+  select.field option:checked {
+    font-weight: 600;
+  }
+  /* Checkmark — push to the end, match our accent */
+  select.field option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: var(--accent);
+  }
+}
+
 /* === Share Dialog === */
 .share-dialog { inline-size: 520px; }
 .share-section { margin-block-end: 14px; }
@@ -311,20 +547,11 @@ html, body {
 .share-field {
   flex: 1;
   min-inline-size: 0;
-  padding-block: 6px; padding-inline: 10px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
-  color: var(--text);
   text-overflow: ellipsis;
 }
-.share-field:focus { outline: none; border-color: var(--accent); background: var(--bg); }
-.share-field:read-only { cursor: default; }
 .share-divider {
-  block-size: 1px;
-  background: var(--border);
+  block-size: var(--hairline);
+  background: var(--border-faint);
   margin-block: 16px;
 }
 .import-confirm { inline-size: 420px; }
@@ -338,7 +565,7 @@ html, body {
 .import-summary { font-size: 11px; color: var(--text-muted); margin-block-end: 16px; }
 .import-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-.settings-wrap { position: relative; }
+.settings-wrap { position: relative; anchor-name: --settings-trigger; }
 .settings-popover {
   position: absolute;
   inset-block-start: calc(100% + 6px);
@@ -407,16 +634,8 @@ html, body {
   inline-size: 100%;
   min-block-size: 5lh;
   resize: vertical;
-  font-family: var(--font-mono);
-  font-size: 11px;
   line-height: 1.5;
-  padding-block: 6px; padding-inline: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
-  color: var(--text);
 }
-.settings-textarea:focus { outline: none; border-color: var(--accent); background: var(--bg); }
 .settings-hint-block {
   font-size: 10px;
   color: var(--text-muted);
@@ -453,8 +672,8 @@ html, body {
 .btn:hover {
   background: var(--bg);
   box-shadow:
-    0 0 0 1.5px var(--bg),
-    0 0 0 2px var(--border-hover, var(--border-strong)),
+    0 0 0 .5px var(--bg),
+    0 0 0 1.5px var(--border-hover, var(--border-strong)),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
   transition:
@@ -485,8 +704,8 @@ html, body {
 .btn-primary:hover {
   background: var(--accent);
   box-shadow:
+    0 0 0 .5px var(--accent),
     0 0 0 1.5px var(--accent),
-    0 0 0 2px var(--accent),
     0 0 0 0px transparent,
     0 0 0 0px transparent;
 }
@@ -1393,16 +1612,7 @@ html, body {
 .control-label { font-size: 11px; color: var(--text-muted); font-weight: 500; }
 .control-input {
   inline-size: 60px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding-block: 3px; padding-inline: 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  background: var(--bg);
-  color: var(--text);
-  outline: none;
 }
-.control-input:focus { border-color: var(--accent); }
 
 .curve-sidebar-wrap {
   display: flex;
@@ -1573,8 +1783,9 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
 
 .modal {
   background: var(--bg);
+  border: var(--hairline) solid var(--border-faint);
   border-radius: 16px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.06);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
   inline-size: 580px;
   max-inline-size: 90vw;
   max-block-size: 80vh;
@@ -1589,7 +1800,7 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
   align-items: center;
   justify-content: space-between;
   padding-block: 14px; padding-inline: 16px;
-  border-block-end: 1px solid var(--border);
+  border-block-end: var(--hairline) solid var(--border-faint);
 }
 
 .modal-title { font-size: 14px; font-weight: 600; }
@@ -1597,8 +1808,22 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
 
 .modal-tabs {
   display: flex;
+  align-items: center;
   padding-block: 0; padding-inline: 16px;
-  border-block-end: 1px solid var(--border);
+  border-block-end: var(--hairline) solid var(--border-faint);
+}
+.modal-tabs-spacer { flex: 1; }
+.export-format-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 4px;
+}
+.export-format-wrap[hidden] { display: none; }
+.export-format-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .modal-tab {
@@ -1649,16 +1874,7 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
   font-size: 12px;
   color: var(--text-secondary);
 }
-.export-select {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  padding-block: 3px; padding-inline: 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-muted);
-  color: var(--text);
-  cursor: pointer;
-}
+/* .export-select is just .field + select.field — no extra rules needed */
 
 .export-actions {
   display: flex;
@@ -1715,7 +1931,6 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
   box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
 }
 .fap-input-mono { font-family: var(--font-mono); font-size: 11px; }
-.fap-input-sm { inline-size: 160px; padding-block: 4px; padding-inline: 8px; font-size: 11px; }
 .fap-input-row { display: flex; gap: 4px; }
 .fap-input-row .fap-input { flex: 1; }
 .fap-hint {
@@ -1747,26 +1962,75 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
   border-radius: 3px; border: 1px solid var(--border);
 }
 
-/* Step presets */
-.fap-step-presets { display: flex; gap: 6px; margin-block-end: 10px; }
-.fap-preset-btn { flex: 1; justify-content: center; font-size: 12px; padding-block: 8px; padding-inline: 14px; }
-.fap-step-picker { margin-block-start: 8px; }
-.fap-step-chips {
-  display: flex; flex-wrap: wrap; gap: 3px; margin-block-end: 8px;
+/* Step presets — smaller buttons now that textarea handles custom entry */
+.fap-step-presets { display: flex; gap: 4px; margin-block-end: 8px; }
+.fap-preset-btn { justify-content: center; }
+.fap-steps-textarea {
+  inline-size: 100%;
+  min-block-size: 3lh;
+  resize: vertical;
+  line-height: 1.5;
+  margin-block-start: 4px;
 }
-.fap-step-chip {
-  padding-block: 2px; padding-inline: 7px; font-size: 10px; font-family: var(--font-mono);
-  border: 1px solid var(--border); border-radius: 4px;
-  background: var(--bg); color: var(--text-muted);
-  cursor: pointer; transition: all 0.1s; line-height: 1.5;
+.fap-step-error {
+  font-size: 11px;
+  color: var(--danger);
+  margin-block-start: 4px;
 }
-.fap-step-chip:hover { border-color: var(--border-strong); color: var(--text); }
-.fap-step-chip.active {
-  background: var(--accent); color: var(--accent-fg);
+
+/* Collection picker (shown after "Load existing" fetches from Figma API) */
+.fap-collections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-block-size: 200px;
+  overflow-y: auto;
+  /* Items use box-shadow borders which extend outward; padding prevents
+     the scroll container from clipping them at the edges. */
+  padding: 2px;
+  margin-inline: -2px;
+}
+.fap-collection-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-block: 8px; padding-inline: 10px;
+  border: none;
+  background: var(--bg);
+  border-radius: var(--radius);
+  cursor: pointer;
+  text-align: start;
+  font-family: var(--font-sans);
+  transition: background 0.1s;
+  box-shadow: 0 0 0 0.5px var(--border);
+}
+.fap-collection-item:hover { background: var(--bg-subtle); }
+.fap-collection-item.active {
+  background: var(--accent-100);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.fap-col-radio {
+  inline-size: 14px;
+  block-size: 14px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  flex-shrink: 0;
+  position: relative;
+}
+.fap-collection-item.active .fap-col-radio {
   border-color: var(--accent);
 }
-.fap-step-chip.major { font-weight: 600; }
-.fap-add-step-row { display: flex; gap: 6px; align-items: center; }
+.fap-collection-item.active .fap-col-radio::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.fap-col-info { display: flex; flex-direction: column; min-inline-size: 0; }
+.fap-col-name { font-size: 12px; font-weight: 500; color: var(--text); }
+.fap-col-meta { font-size: 10px; color: var(--text-muted); }
+
 .btn-sm { padding-block: 3px; padding-inline: 10px; font-size: 11px; }
 
 /* Summary */

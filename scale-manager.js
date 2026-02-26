@@ -11,6 +11,46 @@ const DEFAULT_STEP_LABELS = [
 // Default divisor: any label divisible by this is "major"
 const DEFAULT_MAJOR_DIVISOR = 50;
 
+// Export color format — step object → string. Used by all export functions.
+// 'hex'   → #2C84DB
+// 'rgb'   → rgb(44 132 219)          (modern space-separated)
+// 'hsl'   → hsl(210 71% 52%)         (rounded, space-separated)
+// 'oklch' → oklch(0.623 0.165 256)   (native engine values)
+function formatStepColor(step, format = 'hex') {
+  switch (format) {
+    case 'rgb': {
+      const [r, g, b] = step.rgb;
+      return `rgb(${r} ${g} ${b})`;
+    }
+    case 'hsl': {
+      // Convert sRGB → HSL on the fly (the engine doesn't store HSL).
+      // Standard algorithm; values rounded for readability.
+      const [r, g, b] = step.rgb.map(v => v / 255);
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const l = (max + min) / 2;
+      const d = max - min;
+      let h = 0, s = 0;
+      if (d !== 0) {
+        s = d / (1 - Math.abs(2 * l - 1));
+        switch (max) {
+          case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
+          case g: h = ((b - r) / d + 2); break;
+          case b: h = ((r - g) / d + 4); break;
+        }
+        h *= 60;
+      }
+      return `hsl(${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%)`;
+    }
+    case 'oklch': {
+      const { L, C, H } = step.oklch;
+      return `oklch(${L.toFixed(3)} ${C.toFixed(3)} ${H.toFixed(1)})`;
+    }
+    case 'hex':
+    default:
+      return step.hex;
+  }
+}
+
 // Parse a comma/space-separated list of step labels, validate, and return
 // a sorted unique array. Throws on invalid input.
 // Rules: integers, ascending, must start at 0 and end at 900, at least 2 steps.
@@ -603,10 +643,10 @@ class ScaleManager {
     this.selectedId = config.selectedId;
   }
 
-  exportAllCSS() {
+  exportAllCSS(format = 'hex') {
     const vars = this.scales.map(s => {
       const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      return s.steps.map(st => `  --${prefix}-${st.label}: ${st.hex};`).join('\n');
+      return s.steps.map(st => `  --${prefix}-${st.label}: ${formatStepColor(st, format)};`).join('\n');
     }).join('\n\n');
     return `:root {\n${vars}\n}`;
   }
@@ -620,15 +660,17 @@ class ScaleManager {
     return JSON.stringify(result, null, 2);
   }
 
-  exportW3CTokens() {
+  exportW3CTokens(format = 'hex') {
     const tokens = {};
     this.scales.forEach(s => {
       const key = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
       const group = {};
       s.steps.forEach(step => {
         group[step.label] = {
-          "$value": step.hex,
+          "$value": formatStepColor(step, format),
           "$type": "color",
+          // Always keep the oklch reference in $description regardless of
+          // output format — it's the engine's ground truth.
           "$description": `oklch(${step.oklch.L.toFixed(3)} ${step.oklch.C.toFixed(3)} ${step.oklch.H.toFixed(1)})`
         };
       });
@@ -637,22 +679,22 @@ class ScaleManager {
     return JSON.stringify(tokens, null, 2);
   }
 
-  exportTailwindV3() {
+  exportTailwindV3(format = 'hex') {
     const colors = {};
     this.scales.forEach(s => {
       const key = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
       const scale = {};
-      s.steps.forEach(st => { scale[st.label] = st.hex; });
+      s.steps.forEach(st => { scale[st.label] = formatStepColor(st, format); });
       colors[key] = scale;
     });
     const obj = { theme: { extend: { colors } } };
     return '// tailwind.config.js\nmodule.exports = ' + JSON.stringify(obj, null, 2);
   }
 
-  exportTailwindV4() {
+  exportTailwindV4(format = 'hex') {
     const vars = this.scales.map(s => {
       const prefix = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-      return s.steps.map(st => `  --color-${prefix}-${st.label}: ${st.hex};`).join('\n');
+      return s.steps.map(st => `  --color-${prefix}-${st.label}: ${formatStepColor(st, format)};`).join('\n');
     }).join('\n\n');
     return `@theme {\n${vars}\n}`;
   }
@@ -660,5 +702,5 @@ class ScaleManager {
 
 if (typeof module !== 'undefined') module.exports = {
   Scale, ScaleManager, getRequiredRatio,
-  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels
+  DEFAULT_STEP_LABELS, DEFAULT_MAJOR_DIVISOR, parseStepLabels, formatStepColor
 };
