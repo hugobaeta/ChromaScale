@@ -36,6 +36,19 @@
 ### Changed — Popover Styling
 - New tokens: `--radius-lg` (10px), `--hairline` (0.5px), `--border-faint` (step 100).
 - All popovers use hairline faint borders and `--radius-lg` with concentric inner-item radii.
+- CSS Anchor Positioning (`@supports` gated): popovers auto-flip via `position-try-fallbacks` when viewport-clipped.
+
+### Added — Form Fields & Selects
+- `.field` base class: shared button-style layered box-shadow border for all inputs/selects/textareas.
+- `appearance: base-select` (Chrome 131+, `@supports` gated): `::picker(select)` styled to match popovers, `::picker-icon` uses our caret-down via background+mask, `option` styled like `.dropdown-item`, `::checkmark` in accent.
+
+### Added — Export Formats & Figma Collections
+- Color format selector (Hex/RGB/HSL/OKLCH) on all code export tabs. New `formatStepColor()` formatter; HSL computed on-the-fly.
+- Figma API: "Load existing" fetches the file's variable collections (`GET /variables/local`), radio-picker lets you target an existing collection (variables added via its real id + default mode) or create new. Step textarea replaces the chip picker; presets auto-fill it.
+
+### Changed — Share Dialog
+- Full URL section hidden when running under `file://`.
+- 699px breakpoint: header drops to two-row grid; set switcher + settings start-aligned.
 
 ## [3.1.0] — 2026-02-23
 
