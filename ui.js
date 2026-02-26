@@ -5,7 +5,6 @@ class App {
   constructor() {
     this.manager = new ScaleManager();
     this.curveEditor = null;
-    this.viewMode = 'light';
     this.root = document.getElementById('app');
     this.STORAGE_KEY = 'chromascale-color-scales';
     this._openSourcePanelId = null;
@@ -140,25 +139,6 @@ class App {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideTip(); });
   }
 
-  _positionModeSlider(animate = true) {
-    const toggle = document.getElementById('mode-toggle');
-    if (!toggle) return;
-    const slider = document.getElementById('mode-slider');
-    // Disable transition on initial placement
-    if (!animate && slider) {
-      slider.style.transition = 'none';
-      slider.offsetHeight;
-    }
-    // Set anchor-name on the active button so the slider tracks it via CSS anchor positioning
-    toggle.querySelectorAll('.mode-btn').forEach(b => {
-      b.style.anchorName = b.classList.contains('active') ? '--active-mode' : '';
-    });
-    if (!animate && slider) {
-      slider.offsetHeight;
-      slider.style.transition = '';
-    }
-  }
-
   _loadDefaults() {
     this.manager.scales = [];
     for (const [name, colors] of Object.entries(this.DEFAULTS)) {
@@ -171,8 +151,6 @@ class App {
       const data = {
         lightnessMax: this.manager.lightnessMax,
         lightnessMin: this.manager.lightnessMin,
-        darkLightnessMax: this.manager.darkLightnessMax,
-        darkLightnessMin: this.manager.darkLightnessMin,
         scales: this.manager.scales.map(s => ({
           name: s.name,
           keyColors: s.keyColors
@@ -201,8 +179,6 @@ class App {
         const first = data[0];
         if (first.whiteLimit != null) this.manager.lightnessMax = first.whiteLimit;
         if (first.blackLimit != null) this.manager.lightnessMin = first.blackLimit;
-        if (first.darkWhiteLimit != null) this.manager.darkLightnessMax = first.darkWhiteLimit;
-        if (first.darkBlackLimit != null) this.manager.darkLightnessMin = first.darkBlackLimit;
         this.manager.scales = [];
         data.forEach(item => {
           this.manager.addScale(item.name, item.keyColors);
@@ -219,12 +195,6 @@ class App {
 
       if (data.lightnessMin != null) this.manager.lightnessMin = data.lightnessMin;
       else if (data.blackLimit != null) this.manager.lightnessMin = data.blackLimit;
-
-      if (data.darkLightnessMax != null) this.manager.darkLightnessMax = data.darkLightnessMax;
-      else if (data.darkWhiteLimit != null) this.manager.darkLightnessMax = data.darkWhiteLimit;
-
-      if (data.darkLightnessMin != null) this.manager.darkLightnessMin = data.darkLightnessMin;
-      else if (data.darkBlackLimit != null) this.manager.darkLightnessMin = data.darkBlackLimit;
 
       this.manager.scales = [];
       data.scales.forEach(item => {
@@ -244,8 +214,6 @@ class App {
     this.manager.scales = [];
     this.manager.lightnessMax = 1.0;
     this.manager.lightnessMin = 0.15;
-    this.manager.darkLightnessMax = 0.95;
-    this.manager.darkLightnessMin = 0.15;
     this._loadDefaults();
     this.manager.selectedId = null;
     this._render();
@@ -394,14 +362,12 @@ class App {
 
   _applyThemeFromScale() {
     const root = document.documentElement;
-    const mode = this.viewMode;
 
     // 1. Inject all scale primitives as CSS variables via <style> element
     let css = ':root {\n';
     for (const scale of this.manager.scales) {
       const prefix = this._scaleCssPrefix(scale.name);
-      const steps = scale.getSteps(mode);
-      for (const s of steps) {
+      for (const s of scale.steps) {
         css += `  --${prefix}-${s.label}: ${s.hex};\n`;
       }
     }
@@ -457,21 +423,6 @@ class App {
         <h1 class="app-title">ChromaScale</h1>
         <span class="app-subtitle">OKLCH color scale tool</span>
       </div>
-      <div class="header-center">
-        <div class="mode-toggle" id="mode-toggle">
-          <div class="mode-slider" id="mode-slider"></div>
-          <button class="mode-btn ${this.viewMode === 'light' ? 'active' : ''}" data-mode="light">
-            <span class="mode-icon mode-icon-outline">${icon('sun',14)}</span>
-            <span class="mode-icon mode-icon-filled">${icon('sun',14)}</span>
-            <span class="mode-label">Light</span>
-          </button>
-          <button class="mode-btn ${this.viewMode === 'dark' ? 'active' : ''}" data-mode="dark">
-            <span class="mode-icon mode-icon-outline">${icon('moon',14)}</span>
-            <span class="mode-icon mode-icon-filled">${icon('moon',14)}</span>
-            <span class="mode-label">Dark</span>
-          </button>
-        </div>
-      </div>
       <div class="header-actions">
         <button class="btn btn-secondary" id="btn-add-scale">
           ${icon('plus',14)}
@@ -495,59 +446,6 @@ class App {
       </div>
     `;
     this.root.appendChild(header);
-    
-    // Position the slider over the active button after layout
-    requestAnimationFrame(() => this._positionModeSlider(false));
-    
-    header.querySelectorAll('.mode-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const oldMode = this.viewMode;
-        const newMode = btn.dataset.mode;
-        if (oldMode === newMode) return;
-
-        // Update state
-        this.viewMode = newMode;
-        document.body.classList.toggle('dark-mode', newMode === 'dark');
-
-        // Update toggle in-place (don't re-render header — slider must persist for transition)
-        const toggle = document.getElementById('mode-toggle');
-        toggle.querySelectorAll('.mode-btn').forEach(b => {
-          const isActive = b.dataset.mode === newMode;
-          b.classList.toggle('active', isActive);
-          b.style.anchorName = isActive ? '--active-mode' : '';
-        });
-
-        // Enable theme color transition on :root
-        document.documentElement.classList.add('theme-transitioning');
-
-        if (this.curveEditor) this.curveEditor.invalidateTheme();
-
-        // Re-render scales only (preserve header)
-        const main = this.root.querySelector('.scales-wrapper');
-        if (main) main.remove();
-        const curvePanel = this.root.querySelector('.curve-panel');
-        if (curvePanel) curvePanel.remove();
-        this._applyThemeFromScale();
-        this._renderMain();
-        this._renderCurvePanel();
-        this._scheduleGradientResize();
-
-        // Re-open source panel if one was open before render
-        if (this._openSourcePanelId) {
-          const scaleObj = this.manager.scales.find(s => s.id === this._openSourcePanelId);
-          if (scaleObj) {
-            const col = this.root.querySelector(`.scale-column[data-scale-id="${scaleObj.id}"]`);
-            if (col) this._toggleSourcePanel(scaleObj, col);
-          }
-        }
-
-        // Remove theme transition class after it finishes
-        clearTimeout(this._themeTransitionTimer);
-        this._themeTransitionTimer = setTimeout(() => {
-          document.documentElement.classList.remove('theme-transitioning');
-        }, 150);
-      });
-    });
 
     header.querySelector('#btn-add-scale').addEventListener('click', () => {
 
@@ -577,8 +475,6 @@ class App {
     // Read current values from manager (global limits)
     const whiteLimit = this.manager.lightnessMax;
     const blackLimit = this.manager.lightnessMin;
-    const darkWhiteLimit = this.manager.darkLightnessMax;
-    const darkBlackLimit = this.manager.darkLightnessMin;
     
     // Check all step pairs against contrast requirements using the linear L schedule
     const rangeWarning = (lMax, lMin) => {
@@ -613,7 +509,7 @@ class App {
     popover.className = 'settings-popover';
     popover.innerHTML = `
       <div class="settings-section">
-        <div class="settings-popover-header">Light Mode</div>
+        <div class="settings-popover-header">Lightness</div>
         <div class="settings-popover-body">
           <div class="settings-row">
             <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
@@ -628,35 +524,15 @@ class App {
           <div class="settings-warning" id="settings-light-warning"></div>
         </div>
       </div>
-      <div class="settings-section">
-        <div class="settings-popover-header">Dark Mode</div>
-        <div class="settings-popover-body">
-          <div class="settings-row">
-            <label class="settings-label">Darkest point <span class="settings-hint">(step 0)</span></label>
-            <input type="number" class="control-input" id="settings-dark-black-limit"
-              value="${darkBlackLimit.toFixed(2)}" min="0" max="0.5" step="0.01">
-          </div>
-          <div class="settings-row">
-            <label class="settings-label">Lightest point <span class="settings-hint">(step 900)</span></label>
-            <input type="number" class="control-input" id="settings-dark-white-limit"
-              value="${darkWhiteLimit.toFixed(2)}" min="0.5" max="1" step="0.01">
-          </div>
-          <div class="settings-warning" id="settings-dark-warning"></div>
-        </div>
-      </div>
     `;
     anchor.appendChild(popover);
 
     const lightWarningEl = popover.querySelector('#settings-light-warning');
-    const darkWarningEl = popover.querySelector('#settings-dark-warning');
 
     const updateWarnings = () => {
       const lw = rangeWarning(this.manager.lightnessMax, this.manager.lightnessMin);
       lightWarningEl.textContent = lw;
       lightWarningEl.hidden = !lw;
-      const dw = rangeWarning(this.manager.darkLightnessMax, this.manager.darkLightnessMin);
-      darkWarningEl.textContent = dw;
-      darkWarningEl.hidden = !dw;
     };
     updateWarnings();
 
@@ -687,10 +563,6 @@ class App {
       onLimitChange(this.manager.setLightnessMax, 'settings-white-limit'));
     popover.querySelector('#settings-black-limit').addEventListener('input',
       onLimitChange(this.manager.setLightnessMin, 'settings-black-limit'));
-    popover.querySelector('#settings-dark-black-limit').addEventListener('input',
-      onLimitChange(this.manager.setDarkLightnessMin, 'settings-dark-black-limit'));
-    popover.querySelector('#settings-dark-white-limit').addEventListener('input',
-      onLimitChange(this.manager.setDarkLightnessMax, 'settings-dark-white-limit'));
     
     // Close when clicking outside
     const closeOnOutside = (e) => {
@@ -704,11 +576,10 @@ class App {
 
   // Lightweight update: refresh swatch colors + CSS vars without rebuilding DOM
   _refreshSwatches() {
-    const mode = this.viewMode;
     for (const scale of this.manager.scales) {
       const col = this.root.querySelector(`.scale-column[data-scale-id="${scale.id}"]`);
       if (!col) continue;
-      const steps = scale.getSteps(mode);
+      const steps = scale.steps;
       const prefix = this._scaleCssPrefix(scale.name);
       const rows = col.querySelectorAll('.swatch-row');
       rows.forEach((row, i) => {
@@ -819,7 +690,7 @@ class App {
       col.style.setProperty(token, `var(--${prefix}-${step})`);
     }
 
-    const allSteps = scale.getSteps(this.viewMode);
+    const allSteps = scale.steps;
 
     // Scale header
     const header = document.createElement('div');
@@ -852,7 +723,7 @@ class App {
     });
     bar.appendChild(nameInput);
 
-    const validation = this.viewMode === 'dark' ? scale.getDarkContrastValidation() : scale.getContrastValidation();
+    const validation = scale.getContrastValidation();
     const failCount = validation.constrained.filter(v => !v.pass).length;
     const adjustCount = allSteps.filter(s => s.adjusted).length;
 
@@ -1588,11 +1459,10 @@ class App {
     const steps = Math.max(h, 256);
     const stepH = h / steps;
     
-    const isDark = this.viewMode === 'dark';
     for (let i = 0; i < steps; i++) {
       const t = i / steps;
       const step = t * 900;
-      let L = isDark ? this.manager.getDarkLinearL(step) : this.manager.getLinearL(step);
+      let L = this.manager.getLinearL(step);
       const C = ColorEngine.cubicHermiteInterpolate(scale.curvePoints.C, t);
       const H = ColorEngine.interpolateHue(scale.curvePoints.H, t);
       
@@ -1734,9 +1604,9 @@ class App {
     const section = document.createElement('div');
     section.className = 'validation-section';
     
-    const validation = this.viewMode === 'dark' ? scale.getDarkContrastValidation() : scale.getContrastValidation();
+    const validation = scale.getContrastValidation();
     const failCount = validation.constrained.filter(v => !v.pass).length;
-    const adjustCount = scale.getSteps(this.viewMode).filter(s => s.adjusted).length;
+    const adjustCount = scale.steps.filter(s => s.adjusted).length;
     
     // Constraint status summary
     const statusDiv = document.createElement('div');
@@ -1854,21 +1724,15 @@ class App {
     const fileNameMap = { css: 'colors.css', 'w3c': 'design-tokens.json', tailwind: 'tailwind-colors' };
     const mimeMap = { css: 'text/css', 'w3c': 'application/json', tailwind: 'text/plain' };
 
-    const getModeOpts = () => ({
-      light: modal.querySelector('#export-light').checked,
-      dark: modal.querySelector('#export-dark').checked
-    });
-
     const getTailwindVersion = () => modal.querySelector('#tailwind-version')?.value || 'v4';
 
     const getContent = (key) => {
-      const opts = getModeOpts();
-      if (key === 'css') return this.manager.exportAllCSS(opts);
-      if (key === 'w3c') return this.manager.exportW3CTokens(opts);
+      if (key === 'css') return this.manager.exportAllCSS();
+      if (key === 'w3c') return this.manager.exportW3CTokens();
       if (key === 'tailwind') {
         return getTailwindVersion() === 'v3'
-          ? this.manager.exportTailwindV3(opts)
-          : this.manager.exportTailwindV4(opts);
+          ? this.manager.exportTailwindV3()
+          : this.manager.exportTailwindV4();
       }
       return '';
     };
@@ -1885,10 +1749,6 @@ class App {
     modal.innerHTML = `
       <div class="modal-header">
         <h2 class="modal-title">Export scales</h2>
-        <div class="export-mode-toggles">
-          <label class="export-mode-toggle"><input type="checkbox" id="export-light" checked> Light</label>
-          <label class="export-mode-toggle"><input type="checkbox" id="export-dark" checked> Dark</label>
-        </div>
         <button class="btn-icon btn-close-modal">
           ${icon('x',16)}
         </button>
@@ -1952,20 +1812,6 @@ class App {
 
     // Initial content render
     refreshContent();
-
-    // Mode toggles refresh all panels
-    modal.querySelectorAll('.export-mode-toggle input').forEach(cb => {
-      cb.addEventListener('change', () => {
-        // Prevent unchecking both
-        const lightCb = modal.querySelector('#export-light');
-        const darkCb = modal.querySelector('#export-dark');
-        if (!lightCb.checked && !darkCb.checked) {
-          cb.checked = true;
-          return;
-        }
-        refreshContent();
-      });
-    });
 
     // Tailwind version selector refreshes tailwind panel
     modal.querySelector('#tailwind-version')?.addEventListener('change', () => {

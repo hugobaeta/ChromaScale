@@ -110,7 +110,6 @@
     <a href="#contrast-hover">Contrast Hover</a>
     <a href="#scale-menu">Scale Menu</a>
     <a class="toc-group" href="#app-chrome">App Chrome</a>
-    <a href="#mode-toggle">Mode Toggle</a>
     <a href="#settings">Settings</a>
     <a class="toc-group" href="#overlays">Overlays</a>
     <a href="#modal">Export Modal</a>
@@ -402,31 +401,11 @@
   <!-- ===== APP CHROME ===== -->
   <h2 id="app-chrome">App Chrome</h2>
 
-  <h3 id="mode-toggle">Mode Toggle</h3>
-  <div class="demo-box">
-    <div class="mode-toggle" id="demo-mode-toggle" style="display:inline-flex">
-      <div class="mode-slider" id="demo-mode-slider"></div>
-      <button class="mode-btn active" data-mode="light">
-        <span class="mode-icon mode-icon-outline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></span>
-        <span class="mode-icon mode-icon-filled"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></span>
-        <span class="mode-label">Light</span>
-      </button>
-      <button class="mode-btn" data-mode="dark">
-        <span class="mode-icon mode-icon-outline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg></span>
-        <span class="mode-icon mode-icon-filled"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/></svg></span>
-        <span class="mode-label">Dark</span>
-      </button>
-    </div>
-    <div class="note" style="margin-block-start:8px">
-      <span class="cls">.mode-toggle</span> &gt; <span class="cls">.mode-slider</span> (CSS custom properties + transition) + <span class="cls">.mode-btn</span> + <span class="cls">.mode-btn.active</span>
-    </div>
-  </div>
-
   <h3 id="settings">Settings</h3>
   <div class="demo-box" style="max-inline-size:300px">
     <div class="settings-popover" style="position:relative;inset-block-start:0">
       <div class="settings-section">
-        <div class="settings-popover-header">Light Mode</div>
+        <div class="settings-popover-header">Lightness</div>
         <div class="settings-popover-body">
           <div class="settings-row">
             <label class="settings-label">Lightest point <span class="settings-hint">(step 0)</span></label>
@@ -451,10 +430,6 @@
     <div class="modal" style="position:relative;inline-size:100%;max-inline-size:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
       <div class="modal-header">
         <h2 class="modal-title">Export scales</h2>
-        <div class="export-mode-toggles">
-          <label class="export-mode-toggle"><input type="checkbox" checked> Light</label>
-          <label class="export-mode-toggle"><input type="checkbox" checked> Dark</label>
-        </div>
         <button class="btn-icon btn-close-modal" onclick="return false">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
@@ -484,7 +459,7 @@
         </div>
       </div>
     </div>
-    <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> (<span class="cls">.export-mode-toggles</span>) + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span> (<span class="cls">.export-version-selector</span>)</div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span> (<span class="cls">.export-version-selector</span>)</div>
   </div>
 
   <h3 id="toast">Toast</h3>
@@ -573,8 +548,6 @@
       <tr><td><code>sourcePanelIn/Out</code></td><td>0.28s / 0.2s</td><td>spring / ease-in</td><td>Source panel</td></tr>
       <tr><td><code>curveSlideUp/Down</code></td><td>0.22s / 0.18s</td><td>decelerate / accelerate</td><td>Curve panel</td></tr>
       <tr><td><code>fadeIn</code> + <code>slideUp</code></td><td>0.15s / 0.2s</td><td>default</td><td>Modal overlay + content</td></tr>
-      <tr><td>Theme transition</td><td>0.18s</td><td>ease</td><td>All <code>@property</code> color vars</td></tr>
-      <tr><td>Mode slider FLIP</td><td>0.18s</td><td>material standard</td><td>Light/dark toggle</td></tr>
     </tbody>
   </table>
 
@@ -582,10 +555,9 @@
   <table class="token-table" style="font-size:10px">
     <thead><tr><th>Component</th><th>Classes</th></tr></thead>
     <tbody>
-      <tr><td>Layout</td><td><code>.app-header</code> <code>.header-left</code> <code>.header-center</code> <code>.header-actions</code> <code>.scales-wrapper</code> <code>.scales-container</code> <code>.scroll-arrow</code> <code>.scroll-arrow-left</code> <code>.scroll-arrow-right</code> <code>.scroll-sentinel</code></td></tr>
+      <tr><td>Layout</td><td><code>.app-header</code> <code>.header-left</code> <code>.header-actions</code> <code>.scales-wrapper</code> <code>.scales-container</code> <code>.scroll-arrow</code> <code>.scroll-arrow-left</code> <code>.scroll-arrow-right</code> <code>.scroll-sentinel</code></td></tr>
       <tr><td>Branding</td><td><code>.app-title</code> <code>.app-subtitle</code></td></tr>
       <tr><td>Buttons</td><td><code>.btn</code> <code>.btn-primary</code> <code>.btn-secondary</code> <code>.btn-ghost</code> <code>.btn-icon-only</code> <code>.btn-icon</code> <code>.btn-sm</code> <code>.btn-close-panel</code> <code>.btn-close-modal</code> <code>.btn-more</code> <code>.btn-add-color</code> <code>.btn-remove-color</code> <code>.swatch-action-btn</code></td></tr>
-      <tr><td>Mode Toggle</td><td><code>.mode-toggle</code> <code>.mode-slider</code> <code>.mode-btn</code> <code>.mode-icon</code> <code>.mode-icon-outline</code> <code>.mode-icon-filled</code> <code>.mode-label</code></td></tr>
       <tr><td>Scale Column</td><td><code>.scale-column</code> <code>.selected</code> <code>.dimmed</code> <code>.source-active</code> <code>.dragging</code> <code>.drag-over-left</code> <code>.drag-over-right</code> <code>.scale-header</code> <code>.scale-header-bar</code> <code>.scale-name-input</code> <code>.drag-handle</code> <code>.header-badge</code> <code>.adjusted-badge</code></td></tr>
       <tr><td>Scale Menu</td><td><code>.scale-more-wrap</code> <code>.scale-dropdown</code> <code>.dropdown-item</code> <code>.dropdown-item-icon</code> <code>.dropdown-item-label</code> <code>.dropdown-item-danger</code> <code>.dropdown-divider</code></td></tr>
       <tr><td>Source Colors</td><td><code>.source-panel</code> <code>.closing</code> <code>.source-panel-content</code> <code>.source-panel-gradient</code> <code>.source-panel-middle</code> <code>.source-panel-header</code> <code>.source-panel-title</code> <code>.source-panel-list</code> <code>.source-panel-footer</code></td></tr>
@@ -598,10 +570,8 @@
       <tr><td>Validation</td><td><code>.validation-section</code> <code>.constraint-status</code> <code>.status-badge</code> <code>.pass</code> <code>.fail</code> <code>.validation-details</code> <code>.validation-summary-row</code> <code>.validation-title</code> <code>.validation-summary</code> <code>.all-pass</code> <code>.has-fails</code> <code>.contrast-list</code> <code>.contrast-item</code> <code>.contrast-fail</code> <code>.ci-more</code> <code>.ci-pair</code> <code>.ci-ratio</code> <code>.ci-status</code> <code>.ci-pass</code> <code>.ci-fail</code></td></tr>
       <tr><td>Controls</td><td><code>.control-group</code> <code>.control-label</code> <code>.control-input</code></td></tr>
       <tr><td>Toast</td><td><code>.toast-notification</code> <code>.visible</code> <code>.toast-error</code></td></tr>
-      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.export-mode-toggles</code> <code>.export-mode-toggle</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-select</code></td></tr>
+      <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-select</code></td></tr>
       <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-sm</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-step-picker</code> <code>.fap-step-chips</code> <code>.fap-step-chip</code> <code>.fap-add-step-row</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-summary-dim</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
-      <tr><td>Dark Mode</td><td><code>body.dark-mode</code></td></tr>
-      <tr><td>Theme Transition</td><td><code>:root.theme-transitioning</code></td></tr>
     </tbody>
   </table>
 
@@ -625,7 +595,6 @@
     card.innerHTML = icon(name, 20) + '<code>' + name + '</code>';
     fillGrid.appendChild(card);
   });
-  // Mode slider is now positioned via CSS anchor positioning — no JS needed
 </script>
 </body>
 </html>

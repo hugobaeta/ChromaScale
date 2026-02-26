@@ -47,19 +47,13 @@ describe('getRequiredRatio', () => {
 });
 
 describe('Scale generation', () => {
-  it('produces exactly 35 light steps', () => {
+  it('produces exactly 35 steps', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     assert.equal(s.steps.length, 35);
   });
 
-  it('produces exactly 35 dark steps', () => {
-    const mgr = new ScaleManager();
-    const s = mgr.addScale('Blue', '#3b82f6');
-    assert.equal(s.darkSteps.length, 35);
-  });
-
-  it('step 0 is always #FFFFFF in light mode', () => {
+  it('step 0 is always #FFFFFF', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     assert.equal(s.steps[0].hex.toUpperCase(), '#FFFFFF');
@@ -73,7 +67,7 @@ describe('Scale generation', () => {
     assert.deepEqual(labels, STEP_LABELS);
   });
 
-  it('light mode steps have monotonically decreasing L', () => {
+  it('steps have monotonically decreasing L', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     for (let i = 1; i < s.steps.length; i++) {
@@ -83,21 +77,10 @@ describe('Scale generation', () => {
       );
     }
   });
-
-  it('dark mode steps have monotonically increasing L', () => {
-    const mgr = new ScaleManager();
-    const s = mgr.addScale('Blue', '#3b82f6');
-    for (let i = 1; i < s.darkSteps.length; i++) {
-      assert.ok(
-        s.darkSteps[i].effectiveL >= s.darkSteps[i - 1].effectiveL - 0.001,
-        `L not increasing at step ${s.darkSteps[i].label}: ${s.darkSteps[i].effectiveL} < ${s.darkSteps[i - 1].effectiveL}`
-      );
-    }
-  });
 });
 
 describe('WCAG contrast constraints', () => {
-  it('all constrained pairs meet requirements (light mode)', () => {
+  it('all constrained pairs meet requirements', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     for (let i = 0; i < s.steps.length; i++) {
@@ -108,24 +91,7 @@ describe('WCAG contrast constraints', () => {
         const ratio = ColorEngine.contrastRatio(s.steps[i].rgb, s.steps[j].rgb);
         assert.ok(
           ratio >= req - 0.05,
-          `Light: steps ${s.steps[i].label}→${s.steps[j].label} (gap ${gap}): ratio ${ratio.toFixed(2)} < required ${req}`
-        );
-      }
-    }
-  });
-
-  it('all constrained pairs meet requirements (dark mode)', () => {
-    const mgr = new ScaleManager();
-    const s = mgr.addScale('Blue', '#3b82f6');
-    for (let i = 0; i < s.darkSteps.length; i++) {
-      for (let j = i + 1; j < s.darkSteps.length; j++) {
-        const gap = s.darkSteps[j].label - s.darkSteps[i].label;
-        const req = getRequiredRatio(gap);
-        if (!req) continue;
-        const ratio = ColorEngine.contrastRatio(s.darkSteps[i].rgb, s.darkSteps[j].rgb);
-        assert.ok(
-          ratio >= req - 0.05,
-          `Dark: steps ${s.darkSteps[i].label}→${s.darkSteps[j].label} (gap ${gap}): ratio ${ratio.toFixed(2)} < required ${req}`
+          `Steps ${s.steps[i].label}→${s.steps[j].label} (gap ${gap}): ratio ${ratio.toFixed(2)} < required ${req}`
         );
       }
     }
@@ -176,36 +142,33 @@ describe('addKeyColor / removeKeyColor', () => {
 });
 
 describe('sampleStep', () => {
-  it('returns valid light and dark colors', () => {
+  it('returns valid color', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     const sample = s.sampleStep(500);
-    assert.ok(sample.light.hex.startsWith('#'));
-    assert.ok(sample.dark.hex.startsWith('#'));
-    assert.equal(sample.light.rgb.length, 3);
-    assert.equal(sample.dark.rgb.length, 3);
+    assert.ok(sample.hex.startsWith('#'));
+    assert.equal(sample.rgb.length, 3);
+    assert.ok(sample.oklch);
   });
 
   it('step 0 sample has L near 1', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     const sample = s.sampleStep(0);
-    assert.ok(sample.light.oklch.L > 0.95, `expected high L, got ${sample.light.oklch.L}`);
+    assert.ok(sample.oklch.L > 0.95, `expected high L, got ${sample.oklch.L}`);
   });
 });
 
 describe('exportJSON', () => {
-  it('produces valid light/dark structure', () => {
+  it('produces valid flat structure', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     const json = s.exportJSON();
-    assert.ok(json.light);
-    assert.ok(json.dark);
-    assert.ok(json.light[0]);
-    assert.ok(json.light[900]);
-    assert.ok(json.light[0].hex);
-    assert.ok(json.light[0].oklch);
-    assert.ok(json.light[0].rgb);
+    assert.ok(json[0]);
+    assert.ok(json[900]);
+    assert.ok(json[0].hex);
+    assert.ok(json[0].oklch);
+    assert.ok(json[0].rgb);
   });
 });
 
@@ -241,7 +204,6 @@ describe('ScaleManager', () => {
     const css = mgr.exportAllCSS();
     assert.ok(css.includes(':root'));
     assert.ok(css.includes('--blue-'));
-    assert.ok(css.includes('prefers-color-scheme: dark'));
   });
 
   it('exportAllJSON produces valid JSON', () => {
@@ -250,8 +212,8 @@ describe('ScaleManager', () => {
     const jsonStr = mgr.exportAllJSON();
     const parsed = JSON.parse(jsonStr);
     assert.ok(parsed['red']);
-    assert.ok(parsed['red'].light);
-    assert.ok(parsed['red'].dark);
+    assert.ok(parsed['red'][0]);
+    assert.ok(parsed['red'][900]);
   });
 });
 
@@ -311,18 +273,6 @@ describe('Uniform L schedule', () => {
     );
   });
 
-  it('dark mode uses linear L from darkLightnessMin to darkLightnessMax', () => {
-    const mgr = new ScaleManager();
-    const s = mgr.addScale('Blue', '#3b82f6');
-    for (const step of s.darkSteps) {
-      const expectedL = mgr.getDarkLinearL(step.label);
-      assert.ok(
-        Math.abs(step.desiredL - expectedL) < 0.001,
-        `Dark step ${step.label}: desiredL ${step.desiredL.toFixed(4)} != expected ${expectedL.toFixed(4)}`
-      );
-    }
-  });
-
   it('WCAG contrast constraints pass with linear L schedule', () => {
     const mgr = new ScaleManager();
     // Test with a challenging hue (blue at high chroma)
@@ -368,8 +318,6 @@ describe('ScaleManager serialization', () => {
     const config = mgr.toConfig();
     assert.equal(config.lightnessMax, 1.0);
     assert.equal(config.lightnessMin, 0.15);
-    assert.equal(config.darkLightnessMax, 0.95);
-    assert.equal(config.darkLightnessMin, 0.15);
     assert.ok(config.scales.length === 1);
     // Scale config should NOT have per-scale limits
     assert.equal(config.scales[0].whiteLimit, undefined);
@@ -401,13 +349,11 @@ describe('ScaleManager serialization', () => {
     assert.equal(mgr2.scales[0].name, 'Blue');
   });
 
-  it('fromConfig handles old config format with per-scale limits', () => {
+  it('fromConfig handles old config format with legacy limit names', () => {
     // Simulate old config with whiteLimit/blackLimit at manager level
     const oldConfig = {
       whiteLimit: 0.98,
       blackLimit: 0.12,
-      darkWhiteLimit: 0.9,
-      darkBlackLimit: 0.1,
       scales: [
         { name: 'Blue', keyColors: ['#3b82f6'], curvePoints: { L: [{x:0,y:1},{x:1,y:0.15}], C: [{x:0,y:0},{x:0.5,y:0.15},{x:1,y:0}], H: [{x:0,y:230},{x:1,y:230}] } }
       ],
@@ -417,8 +363,6 @@ describe('ScaleManager serialization', () => {
     mgr.fromConfig(oldConfig);
     assert.equal(mgr.lightnessMax, 0.98);
     assert.equal(mgr.lightnessMin, 0.12);
-    assert.equal(mgr.darkLightnessMax, 0.9);
-    assert.equal(mgr.darkLightnessMin, 0.1);
     assert.equal(mgr.scales.length, 1);
   });
 });

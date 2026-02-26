@@ -38,8 +38,7 @@ class FigmaPusher {
   // Build the API payload for creating variables
   buildPayload(scales, selectedSteps, collectionName) {
     const colId = 'tmp_col_' + Date.now();
-    const lightModeId = 'tmp_mode_light';
-    const darkModeId = 'tmp_mode_dark';
+    const modeId = 'tmp_mode_default';
 
     const variables = [];
     const modeValues = [];
@@ -60,24 +59,14 @@ class FigmaPusher {
         });
 
         // Try to use pre-generated steps first, fall back to sampling
-        let lightColor, darkColor;
-        const existingLight = scale.steps.find(s => s.label === stepLabel);
-        const existingDark = (scale.darkSteps || []).find(s => s.label === stepLabel);
+        const existing = scale.steps.find(s => s.label === stepLabel);
+        const hex = existing ? existing.hex : scale.sampleStep(stepLabel).hex;
 
-        if (existingLight && existingDark) {
-          lightColor = this.hexToFigmaColor(existingLight.hex);
-          darkColor = this.hexToFigmaColor(existingDark.hex);
-        } else {
-          // Sample from curves for custom steps
-          const sampled = scale.sampleStep(stepLabel);
-          lightColor = this.hexToFigmaColor(sampled.light.hex);
-          darkColor = this.hexToFigmaColor(sampled.dark.hex);
-        }
-
-        modeValues.push(
-          { variableId: varId, modeId: lightModeId, value: lightColor },
-          { variableId: varId, modeId: darkModeId, value: darkColor }
-        );
+        modeValues.push({
+          variableId: varId,
+          modeId: modeId,
+          value: this.hexToFigmaColor(hex)
+        });
       });
     });
 
@@ -86,11 +75,10 @@ class FigmaPusher {
         action: 'CREATE',
         id: colId,
         name: collectionName || 'Colors',
-        initialModeId: lightModeId
+        initialModeId: modeId
       }],
       variableModes: [
-        { action: 'UPDATE', id: lightModeId, name: 'Light', variableCollectionId: colId },
-        { action: 'CREATE', id: darkModeId, name: 'Dark', variableCollectionId: colId }
+        { action: 'UPDATE', id: modeId, name: 'Default', variableCollectionId: colId }
       ],
       variables,
       variableModeValues: modeValues
@@ -119,7 +107,6 @@ class FigmaPusher {
     return {
       status: res.status,
       variablesCreated: payload.variables.length,
-      modesCreated: 2,
       collection: collectionName,
       response: data
     };
@@ -163,7 +150,6 @@ class FigmaPusher {
     const render = () => {
       const scaleCount = manager.scales.length;
       const varCount = scaleCount * selectedSteps.length;
-      const valueCount = varCount * 2;
 
       container.innerHTML = `
         <div class="fap-section">
@@ -248,7 +234,6 @@ class FigmaPusher {
             <span class="fap-summary-count">${scaleCount}</span> scales ×
             <span class="fap-summary-count">${selectedSteps.length}</span> steps =
             <span class="fap-summary-count">${varCount}</span> variables
-            <span class="fap-summary-dim">(${valueCount} mode values)</span>
           </div>
           <div class="fap-scales-list">
             ${manager.scales.map(s => `<span class="fap-scale-chip">${this._escHtml(s.name)}</span>`).join('')}
@@ -370,7 +355,7 @@ class FigmaPusher {
           const result = await this.push(pat, fileKey, manager.scales, selectedSteps, collection);
           pushBtn.innerHTML = icon('check',15) + ' Done!';
           this._showStatus(statusEl, 'success',
-            `✓ Created ${result.variablesCreated} variables with Light + Dark modes in "${collection}". ` +
+            `✓ Created ${result.variablesCreated} variables in "${collection}". ` +
             `<a href="https://www.figma.com/design/${fileKey}" target="_blank" rel="noopener">Open file ↗</a>`
           );
         } catch (err) {

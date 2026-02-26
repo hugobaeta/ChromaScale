@@ -1,7 +1,7 @@
 # Handoff: ChromaScale — OKLCH Color Scale Tool
 
 ## Overview
-ChromaScale is a professional-grade color scale generation tool built on the OKLCH color space. It enables designers to create perceptually uniform color palettes with built-in WCAG contrast constraint enforcement. The tool generates stepped scales from 0 to 900 for both light and dark modes, with interactive curve editing, source color management, gamut clamping, and multiple export formats including CSS custom properties, W3C Design Tokens, Tailwind (v3/v4), and direct Figma API push — with independent light/dark mode toggles.
+ChromaScale is a professional-grade color scale generation tool built on the OKLCH color space. It enables designers to create perceptually uniform color palettes with built-in WCAG contrast constraint enforcement. The tool generates stepped scales from 0 to 900 (white to dark, mode-independent), with interactive curve editing, source color management, gamut clamping, and multiple export formats including CSS custom properties, W3C Design Tokens, Tailwind (v3/v4), and direct Figma API push.
 
 ## Fidelity
 **High-fidelity (hifi)** — This is a fully functional, production-quality tool. The mockup represents the final design with exact colors, typography, spacing, interactions, and behavior. The developer should recreate the UI pixel-perfectly using the codebase's existing libraries and patterns.
@@ -45,7 +45,6 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 
 #### Header
 - **Left**: App title "ChromaScale" (14px, weight 700, letter-spacing -0.02em) + subtitle "OKLCH color scale tool" (11px, `--text-muted`)
-- **Center**: Light/Dark mode toggle — segmented control with CSS Anchor Positioning. Container: `border-radius: 8px`, 2px padding, `--bg-muted` background. Active button sets `style.anchorName = '--active-mode'` via JS; slider uses `position-anchor: --active-mode` with `anchor(top)`, `anchor(left)`, `anchor-size(width/height)` and CSS transitions for smooth animated movement. Active state: filled icon, `font-weight: 600`. Dark mode slider: `--bg-alt` with stronger shadow.
 - **Right**: Action buttons — "Add scale" (secondary), Settings gear (icon-only), Save (floppy disk icon), Reset (counter-clockwise arrow icon), "Export" (primary, accent-colored)
 
 #### Scale Columns
@@ -152,29 +151,24 @@ Each column contains:
 - **Zone labels**: Tiny uppercase labels ("A ≥3:1", "AA ≥4.5:1", "AAA ≥7:1") at zone boundaries
 
 ### 5. Export Modal
-**Purpose**: Export scales in multiple formats with independent light/dark mode control.
+**Purpose**: Export scales in multiple formats.
 
 #### Layout
 - **Overlay**: `position: fixed; inset: 0`, backdrop: `rgba(0,0,0,0.35)` + `blur(3px)`
 - **Modal**: 580px wide, centered, `border-radius: 16px`, max-height 80vh
-- **Header**: Title + light/dark checkboxes (both checked by default) + close button
+- **Header**: Title + close button
 - **Tabs**: CSS | W3C Design Tokens | Tailwind | Figma API
 
-#### Light/Dark Mode Toggles
-- Two checkboxes in the modal header: "Light" and "Dark", both pre-selected
-- Unchecking a mode removes it from all export outputs; at least one must remain checked
-- When only one mode is selected, the output structure flattens (no light/dark wrapper)
-
 #### Tabs
-1. **CSS**: Shows `:root { --prefix-step: hex }` with dark mode selectors and media queries when both modes are selected. Single-mode: flat `:root` block. Copy + Download buttons.
-2. **W3C Design Tokens**: DTCG format (`$value`, `$type`, `$description`) for Tokens Studio and variables import plugins. Both modes: `{ light: {...}, dark: {...} }`. Single mode: flat `{ scaleName: {...} }`. Copy + Download.
-3. **Tailwind**: Version selector dropdown (v4 CSS-based / v3 JS config). v4 outputs `@theme { --color-prefix-step }` with `@variant dark` nesting. v3 outputs `module.exports = { theme: { extend: { colors } } }` with CSS variable references (both modes) or raw hex (single mode). Copy + Download.
+1. **CSS**: Shows `:root { --prefix-step: hex }`. Copy + Download buttons.
+2. **W3C Design Tokens**: DTCG format (`$value`, `$type`, `$description`) for Tokens Studio and variables import plugins. Flat `{ scaleName: {...} }` structure. Copy + Download.
+3. **Tailwind**: Version selector dropdown (v4 CSS-based / v3 JS config). v4 outputs `@theme { --color-prefix-step }`. v3 outputs `module.exports = { theme: { extend: { colors } } }` with raw hex values. Copy + Download.
 4. **Figma API**: Full Figma Variables push panel:
    - Personal Access Token input (password field with toggle visibility)
    - File URL/key input with live key extraction preview
    - Collection name input
    - Step preset selector (Major 19 / All 35 / Custom with chip picker)
-   - Summary: "N scales × N steps = N variables (N mode values)"
+   - Summary: "N scales × N steps = N variables"
    - Push button + Copy curl fallback
    - Status messages (info/success/error)
 
@@ -183,8 +177,7 @@ Each column contains:
 
 #### Layout
 - Anchored below settings gear icon, `min-width: 240px`
-- **Light Mode section**: Lightest point (step 0), Darkest point (step 900) — number inputs
-- **Dark Mode section**: Darkest point (step 0), Lightest point (step 900) — number inputs
+- **Lightness section**: Lightest point (step 0), Darkest point (step 900) — number inputs
 
 ### 7. Scale Dropdown Menu
 **Purpose**: Per-scale actions.
@@ -198,9 +191,7 @@ Each column contains:
 
 ## Interactions & Behavior
 
-### Light/Dark Mode Toggle
-- **Transition**: CSS custom properties transition over 0.18s (using `@property` for animatable colors). The `theme-transitioning` class is added temporarily.
-- **Slider animation**: CSS Anchor Positioning — active button gets `style.anchorName = '--active-mode'` via JS. Slider uses `position-anchor: --active-mode` with `top: anchor(top)`, `left: anchor(left)`, `width: anchor-size(width)`, `height: anchor-size(height)`. CSS transitions on all four properties (0.18s cubic-bezier) create smooth movement. Header DOM is preserved across mode switches (only scales re-render) so the slider element persists for transition continuity.
+### Self-Theming
 - **Theme application**: First scale's step values are mapped to semantic CSS variables:
   - Step 0 → `--bg`
   - Step 50 → `--bg-subtle`, `--hover`
@@ -229,7 +220,7 @@ Each column contains:
 
 ### LocalStorage Persistence
 - Key: `chromascale-color-scales`
-- Saves: `[{ name, keyColors, whiteLimit, blackLimit, darkWhiteLimit, darkBlackLimit }]`
+- Saves: `{ lightnessMax, lightnessMin, scales: [{ name, keyColors }] }`
 - Toast notification on save/reset
 
 ---
@@ -239,7 +230,7 @@ Each column contains:
 ### Primary State
 - `ScaleManager.scales[]` — Array of `Scale` objects
 - `ScaleManager.selectedId` — Currently selected scale (for curve editor)
-- `App.viewMode` — `'light'` or `'dark'`
+- `ScaleManager.lightnessMax` / `lightnessMin` — Shared lightness endpoints for all scales
 - `App._openSourcePanelId` — ID of scale with open source panel (or null)
 
 ### Scale Object State
@@ -247,11 +238,8 @@ Each `Scale` instance holds:
 - `id` — Unique identifier (`scale_timestamp_random`)
 - `name` — Display name
 - `keyColors[]` — Array of hex strings (source colors, sorted by luminance descending)
-- `curvePoints.L/C/H` — Arrays of `{x, y}` control points for each channel
-- `whiteLimit` / `blackLimit` — Lightness endpoints for light mode
-- `darkWhiteLimit` / `darkBlackLimit` — Lightness endpoints for dark mode
-- `steps[]` — Generated 35-step array (light mode)
-- `darkSteps[]` — Generated 35-step array (dark mode)
+- `curvePoints.C/H` — Arrays of `{x, y}` control points for Chroma and Hue channels
+- `steps[]` — Generated 35-step array
 
 ### Step Object Structure
 ```js
@@ -278,7 +266,6 @@ Each `Scale` instance holds:
    - Enforce WCAG contrast constraints on L values (iterative, 4 passes)
    - Gamut-clamp each color to sRGB
    - Verify actual RGB contrast ratios (post-clamp fix, 3 passes)
-   - Generate dark mode steps (reverse L, remap endpoints, enforce dark constraints)
 3. UI re-renders affected column(s)
 
 ---
@@ -322,10 +309,10 @@ AAA (7:1): #10b981 (emerald)  — bg: rgba(16,185,129,0.08)
 
 ### Status Colors
 ```
-Pass:     bg: #dcfce7, text: #166534 (dark: rgba(34,197,94,0.15), #4ade80)
-Fail:     bg: #fee2e2, text: #991b1b (dark: rgba(239,68,68,0.15), #f87171)
-Adjusted: bg: #dbeafe, text: #1e40af (dark: rgba(96,165,250,0.15), #93bbfd)
-Danger:   text: #dc2626 (dark: #f87171)
+Pass:     bg: #dcfce7, text: #166534
+Fail:     bg: #fee2e2, text: #991b1b
+Adjusted: bg: #dbeafe, text: #1e40af
+Danger:   text: #dc2626
 Warning:  text: #b45309, bg: #fffbeb, border: #fde68a
 ```
 
@@ -372,7 +359,7 @@ Settings popover min-width: 240px
 --radius: 6px;       /* Default */
 --radius-sm: 4px;    /* Small elements */
 /* Other values used directly: */
-8px  — Mode toggle, source panel gradient, swatch row hover
+8px  — Source panel gradient, swatch row hover
 10px — Status badges
 12px — Selected column
 16px — Modal
@@ -385,15 +372,9 @@ box-shadow: 0 4px 12px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
 
 /* Dropdown */
 box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
-/* Dark mode: 0 8px 24px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.2) */
 
 /* Modal */
 box-shadow: 0 20px 60px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.06);
-/* Dark mode: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border) */
-
-/* Mode slider */
-box-shadow: 0 1px 4px rgba(22,21,20,0.12);
-/* Dark mode: 0 1px 6px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.08) */
 
 /* Buttons (layered) */
 box-shadow:
@@ -465,16 +446,9 @@ transition: opacity 0.12s
 | ≥650              | 7:1            | AAA (enhanced) |
 
 ### Curve Interpolation
-- **Catmull-Rom spline** (Hermite basis) for L and C channels
+- **Catmull-Rom spline** (Hermite basis) for C channel
 - **Circular interpolation** with hue unwrapping for H channel
-- Endpoints are pinned: L curve always starts at `whiteLimit` (step 0) and ends at `blackLimit` (step 900)
-
-### Dark Mode Generation
-- L curve is sampled in reverse (`tReversed = 1 - t`)
-- Values are remapped from `[blackLimit, whiteLimit]` → `[darkBlackLimit, darkWhiteLimit]`
-- Default endpoints: dark step 0 = L 0.15, dark step 900 = L 0.95
-- Monotonically increasing L is enforced
-- Same contrast constraint enforcement is applied
+- L uses a fixed linear schedule from `lightnessMax` (step 0) to `lightnessMin` (step 900)
 
 ### Gamut Clamping
 - Binary search to find maximum in-gamut chroma at given L and H
@@ -536,10 +510,8 @@ All design/implementation files are included in this handoff package:
 
 6. **Canvas DPR handling**: All canvas operations scale by `window.devicePixelRatio` for crisp rendering on Retina displays.
 
-7. **`@property` for theme transitions**: CSS `@property` declarations register custom properties with `<color>` syntax so they can be smoothly transitioned. The `theme-transitioning` class is temporarily added during mode switches.
+7. **`@property` declarations**: CSS `@property` declarations register custom properties with `<color>` syntax and provide pre-JS colored fallbacks for semantic role tokens.
 
 8. **CSS Logical Properties**: The codebase uses logical properties (`inline-size`, `block-size`, `inset-block-start`, `margin-inline`, `padding-block`, etc.) for writing-mode-aware layout. Exceptions: `overflow-x`/`overflow-y` (limited browser support for logical equivalents), contrast pill positioning via JS (`.style.top`/`.style.height`), and elements in `writing-mode: vertical-lr` where axis-swapping makes logical properties counterintuitive.
 
-9. **CSS Anchor Positioning for mode toggle**: The light/dark slider uses `position-anchor`/`anchor()`/`anchor-size()` to track the active button. The active button's `style.anchorName` is set via JS. Header DOM is preserved across mode switches so the slider persists for CSS transition continuity.
-
-10. **Scroll-snap with IntersectionObserver arrows**: Scale columns use `scroll-snap-align: start`. Sentinel elements at container edges are observed to show/hide gradient-faded arrow buttons.
+9. **Scroll-snap with IntersectionObserver arrows**: Scale columns use `scroll-snap-align: start`. Sentinel elements at container edges are observed to show/hide gradient-faded arrow buttons.

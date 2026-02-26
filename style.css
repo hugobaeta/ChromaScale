@@ -40,27 +40,6 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Theme transition — only active during mode switch, removed after to prevent flash on page load */
-:root.theme-transitioning {
-  transition:
-    --bg 0.1s ease,
-    --bg-subtle 0.1s ease,
-    --bg-muted 0.1s ease,
-    --bg-alt 0.1s ease,
-    --hover 0.1s ease,
-    --border 0.1s ease,
-    --border-strong 0.1s ease,
-    --border-hover 0.1s ease,
-    --text 0.1s ease,
-    --text-secondary 0.1s ease,
-    --text-muted 0.1s ease,
-    --text-muted-strong 0.1s ease,
-    --accent 0.1s ease,
-    --accent-fg 0.1s ease,
-    --accent-100 0.1s ease,
-    --outline-active 0.1s ease;
-}
-
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -148,11 +127,6 @@
   --adjusted-fg:     #032042;
 }
 
-body.dark-mode {
-  --inset-border: rgba(255,255,255,0.12);
-  --hover-overlay: rgba(255,255,255,0.1);
-}
-
 html, body {
   block-size: 100%;
   font-family: var(--font-sans); 
@@ -185,7 +159,6 @@ html, body {
 .header-left { display: flex; align-items: baseline; gap: 10px; min-inline-size: 0; }
 .app-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
 .app-subtitle { font-size: 11px; color: var(--text-muted); font-weight: 400; letter-spacing: 0.01em; white-space: nowrap; }
-.header-center { position: absolute; inset-inline-start: 50%; transform: translateX(-50%); }
 .header-actions { display: flex; gap: 6px; }
 .settings-wrap { position: relative; }
 .settings-popover {
@@ -480,13 +453,6 @@ html, body {
   background: var(--border);
   margin-block: 4px; margin-inline: 0;
 }
-body.dark-mode .scale-dropdown {
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.2);
-}
-body.dark-mode .dropdown-item-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-}
-
 /* === Scales Container === */
 .scales-wrapper {
   position: relative;
@@ -992,104 +958,6 @@ body.dark-mode .dropdown-item-danger:hover:not(:disabled) {
 .toast-notification.toast-error {
   background: var(--danger);
 }
-body.dark-mode .toast-notification.toast-error {
-  background: #D14D49; /* Red dark-500 */
-  color: #fff;
-}
-
-/* === Mode Toggle === */
-.mode-toggle {
-  display: flex;
-  border-radius: 8px;
-  padding: 2px;
-  background: var(--bg-muted);
-  position: relative;
-}
-.mode-slider {
-  position: absolute;
-  border-radius: 6px;
-  background: var(--bg);
-  box-shadow: 0 1px 4px rgba(22,21,20,0.12);
-  pointer-events: none;
-  z-index: 0;
-  position-anchor: --active-mode;
-  top: anchor(top);
-  left: anchor(left);
-  width: anchor-size(width);
-  height: anchor-size(height);
-  transition: top 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              left 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              width 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              height 0.18s cubic-bezier(0.4, 0, 0.2, 1),
-              background 0.18s ease,
-              box-shadow 0.18s ease;
-}
-body.dark-mode .mode-slider {
-  background: var(--bg-alt);
-  box-shadow: 0 1px 6px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.08);
-}
-.mode-btn {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding-block: 4px; padding-inline: 10px;
-  font-size: 12px;
-  font-weight: 400;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: color 0.25s ease;
-}
-.mode-btn.active {
-  color: var(--text);
-}
-.mode-btn.active .mode-label {
-  font-weight: 600;
-}
-.mode-btn .mode-label {
-  transition: font-weight 0.2s ease;
-}
-.mode-btn:not(.active):hover {
-  color: var(--text);
-}
-/* Icon switching: outline shown by default, filled when active */
-.mode-icon {
-  display: flex;
-  align-items: center;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.mode-icon-filled {
-  position: absolute;
-  inset-inline-start: 12px;
-  opacity: 0;
-  transform: scale(0.7);
-}
-.mode-icon-outline {
-  opacity: 1;
-  transform: scale(1);
-}
-.mode-btn.active .mode-icon-filled {
-  opacity: 1;
-  transform: scale(1);
-}
-.mode-btn.active .mode-icon-outline {
-  opacity: 0;
-  transform: scale(0.7);
-}
-/* Dark mode: stronger shadows for elevated surfaces */
-body.dark-mode .settings-popover {
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.2);
-}
-body.dark-mode .modal {
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px var(--border);
-}
-/* dark-mode .mode-btn.active box-shadow moved to .mode-slider */
-body.dark-mode ::selection { background: rgba(255,255,255,0.12); }
-
 /* === Curve panel close button === */
 #btn-close-curve { margin-inline-end: -6px; }
 .btn-close-panel {
@@ -1237,9 +1105,6 @@ body.dark-mode ::selection { background: rgba(255,255,255,0.12); }
   animation: curveSlideUp 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
   transform-origin: bottom;
 }
-body.dark-mode .curve-panel {
-  box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.5);
-}
 .curve-panel.closing {
   animation: curveSlideDown 0.18s cubic-bezier(0.55, 0.06, 0.68, 0.19) both;
 }
@@ -1356,10 +1221,6 @@ body.dark-mode .curve-panel {
 .status-badge.pass { background: var(--success-subtle); color: var(--success-fg); }
 .status-badge.fail { background: var(--danger-subtle); color: var(--danger-fg); }
 .status-badge.adjusted { background: var(--adjusted-subtle); color: var(--adjusted-fg); }
-body.dark-mode .status-badge.pass { background: color-mix(in srgb, var(--success) 15%, transparent); color: #599107; /* Green dark-500 */ }
-body.dark-mode .status-badge.fail { background: color-mix(in srgb, var(--danger) 15%, transparent); color: #D14D49; /* Red dark-500 */ }
-body.dark-mode .status-badge.adjusted { background: color-mix(in srgb, var(--adjusted) 15%, transparent); color: #3A7FD6; /* Blue dark-500 */ }
-
 .validation-details { margin-block-end: 6px; }
 
 .validation-summary-row {
@@ -1391,9 +1252,6 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
 }
 .validation-summary.all-pass { background: var(--success-subtle); color: var(--success-fg); }
 .validation-summary.has-fails { background: var(--danger-subtle); color: var(--danger-fg); }
-body.dark-mode .validation-summary.all-pass { background: color-mix(in srgb, var(--success) 15%, transparent); color: #599107; }
-body.dark-mode .validation-summary.has-fails { background: color-mix(in srgb, var(--danger) 15%, transparent); color: #D14D49; }
-
 .contrast-list {
   display: flex;
   flex-direction: column;
@@ -1443,25 +1301,6 @@ body.dark-mode .validation-summary.has-fails { background: color-mix(in srgb, va
 }
 .ci-pass { color: var(--success); }
 .ci-fail { color: var(--danger); font-weight: 600; }
-body.dark-mode .ci-pass { color: #599107; /* Green dark-500 */ }
-body.dark-mode .ci-fail { color: #D14D49; /* Red dark-500 */ }
-
-/* Dark mode: danger items */
-body.dark-mode .dropdown-item-danger { color: #D14D49; /* Red dark-500 */ }
-body.dark-mode .dropdown-item-danger .dropdown-item-icon { color: #D14D49; }
-body.dark-mode .dropdown-item-danger:hover:not(:disabled) .dropdown-item-icon { color: #D14D49; }
-
-/* Dark mode: out-of-range warning */
-body.dark-mode .out-of-range-note {
-  color: #AB7018; /* Yellow dark-500 */
-  background: color-mix(in srgb, var(--warning) 10%, transparent);
-  border-color: color-mix(in srgb, var(--warning) 25%, transparent);
-}
-
-/* Dark mode: contrast fail row */
-body.dark-mode .contrast-item.contrast-fail {
-  background: color-mix(in srgb, var(--danger) 8%, transparent);
-}
 
 /* === Export Modal === */
 .modal-overlay {
@@ -1502,26 +1341,6 @@ body.dark-mode .contrast-item.contrast-fail {
 
 .modal-title { font-size: 14px; font-weight: 600; }
 .btn-close-modal { inline-size: 28px; block-size: 28px; }
-
-.export-mode-toggles {
-  display: flex;
-  gap: 12px;
-  margin-inline-start: auto;
-  margin-inline-end: 8px;
-}
-.export-mode-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  user-select: none;
-}
-.export-mode-toggle input[type="checkbox"] {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
 
 .modal-tabs {
   display: flex;
@@ -1740,4 +1559,4 @@ body.dark-mode .contrast-item.contrast-fail {
 
 /* Inline SVG icons */
 .swatch-action-btn svg, .btn-icon svg, .btn svg, .dropdown-item-icon svg,
-.mode-icon svg, .drag-handle svg { vertical-align: middle; }
+.drag-handle svg { vertical-align: middle; }
