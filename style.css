@@ -156,10 +156,142 @@ html, body {
   z-index: 20;
 }
 
-.header-left { display: flex; align-items: baseline; gap: 10px; min-inline-size: 0; }
+.header-left { display: flex; align-items: center; gap: 12px; min-inline-size: 0; }
 .app-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
-.app-subtitle { font-size: 11px; color: var(--text-muted); font-weight: 400; letter-spacing: 0.01em; white-space: nowrap; }
 .header-actions { display: flex; gap: 6px; }
+
+/* === Set Switcher (header dropdown) === */
+.set-switcher-wrap { position: relative; }
+.set-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 4px; padding-inline: 10px 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+.set-switcher:hover { background: var(--bg-muted); border-color: var(--border-strong); }
+.set-switcher svg { color: var(--text-muted); }
+.set-switcher-name {
+  max-inline-size: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-dropdown {
+  position: absolute;
+  inset-block-start: calc(100% + 6px);
+  inset-inline-start: 0;
+  z-index: 200;
+  min-inline-size: 200px;
+  max-inline-size: 280px;
+  max-block-size: 60vh;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06);
+  padding: 4px;
+  animation: dropdownIn 0.12s ease-out;
+}
+.set-item-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+.set-item-active { font-weight: 600; }
+.set-item-active .set-item-dot { background: var(--accent); }
+.set-item-count {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* === Sets Management Modal === */
+.sets-modal { inline-size: 520px; }
+.sets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block-end: 16px;
+  max-block-size: 50vh;
+  overflow-y: auto;
+}
+.set-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+.set-card:hover { border-color: var(--border-strong); background: var(--bg-subtle); }
+.set-card-active { border-color: var(--accent); background: var(--accent-100); }
+.set-swatch-strip { display: flex; gap: 2px; flex-shrink: 0; }
+.set-swatch {
+  inline-size: 14px;
+  block-size: 28px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+.set-card-info { flex: 1; min-inline-size: 0; }
+.set-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-card-meta { font-size: 10px; color: var(--text-muted); margin-block-start: 2px; }
+.set-rename-input {
+  inline-size: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  padding-block: 2px; padding-inline: 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  outline: none;
+}
+.set-card-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.set-card:hover .set-card-actions,
+.set-card-active .set-card-actions { opacity: 1; }
+.set-card-btn {
+  inline-size: 26px;
+  block-size: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.set-card-btn:hover:not(:disabled) { background: var(--bg-muted); color: var(--text); }
+.set-card-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+.set-card-btn-danger:hover:not(:disabled) { background: var(--danger-subtle); color: var(--danger); }
+.sets-footer {
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--border);
+}
 .settings-wrap { position: relative; }
 .settings-popover {
   position: absolute;

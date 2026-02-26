@@ -27,6 +27,8 @@ const ICON_PATHS = {
   palette: '<path d="M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10a2 2 0 002-2v-.09a2 2 0 012-1.91h1.5A5.5 5.5 0 0022 12.5 10 10 0 0012 2z"/><circle cx="7.5" cy="11.5" r="1.5" fill="currentColor"/><circle cx="12" cy="7.5" r="1.5" fill="currentColor"/><circle cx="16.5" cy="11.5" r="1.5" fill="currentColor"/>',
   'caret-left': '<path d="M15 18l-6-6 6-6"/>',
   'caret-right': '<path d="M9 18l6-6-6-6"/>',
+  'caret-down': '<path d="M6 9l6 6 6-6"/>',
+  pencil: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/>',
 };
 
 // Dot-based icons use fill instead of stroke

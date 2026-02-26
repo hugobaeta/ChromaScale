@@ -169,13 +169,225 @@ class App {
     this.store.updateActive(cfg);
   }
 
-  _resetActiveSet() {
-    this._loadConfigIntoManager(defaultsConfig());
-    this.manager.selectedId = null;
+  _switchSet(id) {
+    // Flush current edits, swap config, re-render
     this._saveActiveSet();
+    const next = this.store.switchTo(id);
+    this._loadConfigIntoManager(next.config);
+    this.manager.selectedId = null;
+    this._openSourcePanelId = null;
     this._render();
     this._scheduleGradientResize();
-    this._showToast('Reset to defaults');
+  }
+
+  // ---- Set switcher dropdown (header-left quick switch) ----
+
+  _toggleSetDropdown(anchor) {
+    const existing = anchor.querySelector('.set-dropdown');
+    if (existing) { existing.remove(); return; }
+    document.querySelectorAll('.set-dropdown').forEach(d => d.remove());
+
+    const activeId = this.store.activeId;
+    const sets = this.store.list();
+
+    const dd = document.createElement('div');
+    dd.className = 'set-dropdown';
+
+    sets.forEach(s => {
+      const btn = document.createElement('button');
+      btn.className = 'dropdown-item' + (s.id === activeId ? ' set-item-active' : '');
+      btn.innerHTML = `
+        <span class="set-item-dot"></span>
+        <span class="dropdown-item-label">${s.name}</span>
+        <span class="set-item-count">${s.config.scales.length}</span>
+      `;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dd.remove();
+        if (s.id !== activeId) this._switchSet(s.id);
+      });
+      dd.appendChild(btn);
+    });
+
+    const div = document.createElement('div');
+    div.className = 'dropdown-divider';
+    dd.appendChild(div);
+
+    const mgmt = document.createElement('button');
+    mgmt.className = 'dropdown-item';
+    mgmt.innerHTML = `<span class="dropdown-item-icon">${icon('gear',14)}</span><span class="dropdown-item-label">Manage sets…</span>`;
+    mgmt.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dd.remove();
+      this._showSetsModal();
+    });
+    dd.appendChild(mgmt);
+
+    anchor.appendChild(dd);
+
+    const closeOnOutside = (e) => {
+      if (!dd.contains(e.target) && !anchor.contains(e.target)) {
+        dd.remove();
+        document.removeEventListener('mousedown', closeOnOutside);
+      }
+    };
+    setTimeout(() => document.addEventListener('mousedown', closeOnOutside), 10);
+  }
+
+  // ---- Sets management modal ----
+
+  _relTime(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return 'just now';
+    const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24); if (d < 30) return `${d}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  _showSetsModal() {
+    document.querySelector('.modal-overlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const modal = document.createElement('div');
+    modal.className = 'modal sets-modal';
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h2 class="modal-title">Sets</h2>
+        <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
+      </div>
+      <div class="modal-body">
+        <div class="sets-list"></div>
+        <div class="sets-footer">
+          <button class="btn btn-secondary" id="btn-new-set">${icon('plus',14)} New set</button>
+        </div>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
+
+    const renderList = () => {
+      const list = modal.querySelector('.sets-list');
+      list.innerHTML = '';
+      const activeId = this.store.activeId;
+      const sets = this.store.list();
+
+      sets.forEach(s => {
+        const card = document.createElement('div');
+        card.className = 'set-card' + (s.id === activeId ? ' set-card-active' : '');
+        card.dataset.setId = s.id;
+
+        // swatch strip: first scale's steps 100/300/500/700/900 (approx indices)
+        const strip = document.createElement('div');
+        strip.className = 'set-swatch-strip';
+        const first = s.config.scales[0];
+        if (first) {
+          // We don't have live Scale objects here — use key colors as a rough preview.
+          // Pick 5 evenly-spaced key colors (or fewer if <5 keys).
+          const kc = first.keyColors;
+          const pick = kc.length <= 5 ? kc : [0,1,2,3,4].map(i => kc[Math.floor(i * (kc.length-1) / 4)]);
+          pick.forEach(hex => {
+            const sw = document.createElement('span');
+            sw.className = 'set-swatch';
+            sw.style.backgroundColor = hex;
+            strip.appendChild(sw);
+          });
+        }
+
+        const info = document.createElement('div');
+        info.className = 'set-card-info';
+        info.innerHTML = `
+          <div class="set-card-name" data-name>${s.name}</div>
+          <div class="set-card-meta">${s.config.scales.length} ${s.config.scales.length === 1 ? 'scale' : 'scales'} · ${this._relTime(s.modified)}</div>
+        `;
+
+        const actions = document.createElement('div');
+        actions.className = 'set-card-actions';
+
+        const mkBtn = (ico, tip, handler, extra = '') => {
+          const b = document.createElement('button');
+          b.className = 'btn-icon set-card-btn' + (extra ? ' ' + extra : '');
+          b.dataset.tooltip = tip;
+          b.innerHTML = icon(ico, 14);
+          b.addEventListener('click', (e) => { e.stopPropagation(); handler(); });
+          return b;
+        };
+
+        actions.appendChild(mkBtn('pencil', 'Rename', () => {
+          const nameEl = info.querySelector('[data-name]');
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.className = 'set-rename-input';
+          input.value = s.name;
+          nameEl.replaceWith(input);
+          input.focus(); input.select();
+          const commit = () => {
+            const val = input.value.trim() || s.name;
+            this.store.rename(s.id, val);
+            if (s.id === activeId) {
+              // update header switcher label too
+              const label = document.querySelector('.set-switcher-name');
+              if (label) label.textContent = val;
+            }
+            renderList();
+          };
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { input.value = s.name; input.blur(); }
+          });
+        }));
+
+        actions.appendChild(mkBtn('copy', 'Duplicate', () => {
+          this.store.duplicate(s.id);
+          renderList();
+        }));
+
+        const delBtn = mkBtn('trash', 'Delete', () => {
+          if (!confirm(`Delete "${s.name}"? This cannot be undone.`)) return;
+          const wasActive = s.id === this.store.activeId;
+          this.store.delete(s.id);
+          if (wasActive) {
+            // active set was deleted — SetStore already picked a new activeId
+            this._loadConfigIntoManager(this.store.getActive().config);
+            this.manager.selectedId = null;
+            this._openSourcePanelId = null;
+            this._render();
+            this._scheduleGradientResize();
+          }
+          renderList();
+        }, 'set-card-btn-danger');
+        if (this.store.sets.length <= 1) delBtn.disabled = true;
+        actions.appendChild(delBtn);
+
+        card.appendChild(strip);
+        card.appendChild(info);
+        card.appendChild(actions);
+
+        // Click on card body → open
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.set-card-actions') || e.target.closest('.set-rename-input')) return;
+          if (s.id !== this.store.activeId) this._switchSet(s.id);
+          overlay.remove();
+        });
+
+        list.appendChild(card);
+      });
+    };
+
+    renderList();
+
+    modal.querySelector('#btn-new-set').addEventListener('click', () => {
+      const id = this.store.create('Untitled', defaultsConfig());
+      this._switchSet(id);
+      overlay.remove();
+      this._showToast('New set created');
+    });
   }
 
   _showToast(msg, isError) {
@@ -378,7 +590,12 @@ class App {
     header.innerHTML = `
       <div class="header-left">
         <h1 class="app-title">ChromaScale</h1>
-        <span class="app-subtitle">OKLCH color scale tool</span>
+        <div class="set-switcher-wrap">
+          <button class="set-switcher" id="btn-set-switcher">
+            <span class="set-switcher-name">${this.store.getActive().name}</span>
+            ${icon('caret-down',12)}
+          </button>
+        </div>
       </div>
       <div class="header-actions">
         <button class="btn btn-secondary" id="btn-add-scale">
@@ -390,12 +607,6 @@ class App {
             ${icon('gear',16)}
           </button>
         </div>
-        <button class="btn btn-secondary btn-icon-only" id="btn-save" data-tooltip="Save">
-          ${icon('floppy-disk',16)}
-        </button>
-        <button class="btn btn-secondary btn-icon-only" id="btn-reset" data-tooltip="Reset">
-          ${icon('arrow-counter-clockwise',16)}
-        </button>
         <button class="btn btn-primary" id="btn-export">
           ${icon('export',16)}
           Export
@@ -418,12 +629,11 @@ class App {
       e.stopPropagation();
       this._toggleSettingsPopover(header.querySelector('.settings-wrap'));
     });
-    header.querySelector('#btn-save').addEventListener('click', () => {
-      this._saveActiveSet();
-      this._showToast('Saved');
-    });
-    header.querySelector('#btn-reset').addEventListener('click', () => this._resetActiveSet());
     header.querySelector('#btn-export').addEventListener('click', () => this._showExportModal());
+    header.querySelector('#btn-set-switcher').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggleSetDropdown(header.querySelector('.set-switcher-wrap'));
+    });
   }
 
   _toggleSettingsPopover(anchor) {
