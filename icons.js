@@ -29,6 +29,7 @@ const ICON_PATHS = {
   'caret-right': '<path d="M9 18l6-6-6-6"/>',
   'caret-down': '<path d="M6 9l6 6 6-6"/>',
   pencil: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51L8.59 10.49"/>',
 };
 
 // Dot-based icons use fill instead of stroke

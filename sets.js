@@ -170,11 +170,72 @@ class SetStore {
   }
 }
 
+// ---- URL encoding (gzip + base64url) ------------------------------
+// These are async because CompressionStream/DecompressionStream are
+// stream-based. The pipeline is: JSON → UTF-8 bytes → gzip → base64url.
+
+async function gzip(str) {
+  const bytes = new TextEncoder().encode(str);
+  const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function gunzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return await new Response(stream).text();
+}
+
+function base64urlEncode(bytes) {
+  // chunk to avoid "Maximum call stack size exceeded" on large inputs
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64urlDecode(str) {
+  // restore standard base64 alphabet + padding
+  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4;
+  if (pad) b64 += '='.repeat(4 - pad);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+// Serialize a payload → compact URL-safe string
+async function encodeSet(payload) {
+  // Stabilize float precision to 3 decimals to keep URLs short & deterministic
+  const json = JSON.stringify(payload, (k, v) =>
+    typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v
+  );
+  return base64urlEncode(await gzip(json));
+}
+
+// Parse an encoded string → payload. Throws on bad input.
+async function decodeSet(str) {
+  const json = await gunzip(base64urlDecode(str));
+  const payload = JSON.parse(json);
+  if (payload.v !== 1) throw new Error(`Unsupported share format v${payload.v}`);
+  if (!Array.isArray(payload.scales) || payload.scales.length === 0) {
+    throw new Error('Share payload has no scales');
+  }
+  return payload;
+}
+
 // ---- exports ------------------------------------------------------
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { SetStore, SETS_KEY, OLD_KEY };
+  module.exports = {
+    SetStore, SETS_KEY, OLD_KEY,
+    encodeSet, decodeSet, base64urlEncode, base64urlDecode, gzip, gunzip
+  };
 }
 if (typeof window !== 'undefined') {
   window.SetStore = SetStore;
+  window.encodeSet = encodeSet;
+  window.decodeSet = decodeSet;
 }

@@ -38,6 +38,20 @@ class App {
       this.store.switchTo(id);
     }
 
+    // Check for shared URL — decode is async, so hold the result and
+    // prompt after the user's own workspace has rendered underneath.
+    let pendingImport = null;
+    const hash = location.hash;
+    if (hash.startsWith('#s=')) {
+      try {
+        pendingImport = await decodeSet(hash.slice(3));
+      } catch (e) {
+        // Invalid hash — we'll toast after render. Clear it now.
+        this._pendingImportError = e.message;
+      }
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+
     this._loadConfigIntoManager(this.store.getActive().config);
 
     // Start with no scale selected — curve panel hidden until user clicks
@@ -46,6 +60,13 @@ class App {
     this._initTooltipSystem();
     this._render();
     this._scheduleGradientResize();
+
+    if (pendingImport) {
+      this._showImportConfirmation(pendingImport);
+    } else if (this._pendingImportError) {
+      this._showToast('Invalid share link: ' + this._pendingImportError, true);
+      this._pendingImportError = null;
+    }
   }
 
 
@@ -392,6 +413,219 @@ class App {
     });
   }
 
+  // ---- URL sharing ----
+
+  // Compare curve point arrays with epsilon tolerance
+  _curvesMatch(a, b, eps = 1e-4) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (Math.abs(a[i].x - b[i].x) > eps || Math.abs(a[i].y - b[i].y) > eps) return false;
+    }
+    return true;
+  }
+
+  // Build compact share payload from current manager state.
+  // Omits curve points that match _initCurves() output to keep URLs short.
+  _buildSharePayload() {
+    const mgr = this.manager;
+    // Build a throwaway manager with matching limits so we can regenerate
+    // default curves for comparison (they depend on lMax/lMin).
+    const refMgr = new ScaleManager();
+    refMgr.lightnessMax = mgr.lightnessMax;
+    refMgr.lightnessMin = mgr.lightnessMin;
+
+    const scales = mgr.scales.map(s => {
+      const entry = {
+        n: s.name,
+        k: s.keyColors.map(h => h.replace(/^#/, ''))
+      };
+      // Default curves for these keys at these limits
+      const ref = new Scale(s.name, s.keyColors, refMgr);
+      if (!this._curvesMatch(s.curvePoints.C, ref.curvePoints.C)) {
+        entry.c = s.curvePoints.C.map(p => [p.x, p.y]);
+      }
+      if (!this._curvesMatch(s.curvePoints.H, ref.curvePoints.H)) {
+        entry.h = s.curvePoints.H.map(p => [p.x, p.y]);
+      }
+      return entry;
+    });
+
+    return {
+      v: 1,
+      name: this.store.getActive().name,
+      lMax: mgr.lightnessMax,
+      lMin: mgr.lightnessMin,
+      scales
+    };
+  }
+
+  // Convert compact payload → ScaleManager.fromConfig shape
+  _payloadToConfig(payload) {
+    return {
+      lightnessMax: payload.lMax ?? 1.0,
+      lightnessMin: payload.lMin ?? 0.15,
+      scales: payload.scales.map(s => {
+        const cfg = {
+          name: s.n,
+          keyColors: s.k.map(h => '#' + h)
+        };
+        if (s.c || s.h) {
+          cfg.curvePoints = {};
+          if (s.c) cfg.curvePoints.C = s.c.map(([x, y]) => ({ x, y }));
+          if (s.h) cfg.curvePoints.H = s.h.map(([x, y]) => ({ x, y }));
+        }
+        return cfg;
+      })
+    };
+  }
+
+  async _showShareDialog() {
+    document.querySelector('.modal-overlay')?.remove();
+
+    // Flush pending edits so the share reflects current state
+    this._saveActiveSet();
+
+    // Encode (async — may take a few ms)
+    const payload = this._buildSharePayload();
+    const encoded = await encodeSet(payload);
+    const fullUrl = location.href.split('#')[0] + '#s=' + encoded;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const modal = document.createElement('div');
+    modal.className = 'modal share-dialog';
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h2 class="modal-title">Share "${payload.name}"</h2>
+        <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
+      </div>
+      <div class="modal-body">
+        <div class="share-section">
+          <div class="share-label">Full URL</div>
+          <div class="share-row">
+            <input class="share-field" type="text" readonly value="${fullUrl}">
+            <button class="btn btn-secondary btn-copy-share" data-copy="url">${icon('copy',14)} Copy</button>
+          </div>
+        </div>
+        <div class="share-section">
+          <div class="share-label">Parameters only</div>
+          <div class="share-row">
+            <input class="share-field" type="text" readonly value="${encoded}">
+            <button class="btn btn-secondary btn-copy-share" data-copy="params">${icon('copy',14)} Copy</button>
+          </div>
+        </div>
+        <div class="share-divider"></div>
+        <div class="share-section">
+          <div class="share-label">Import a set</div>
+          <div class="share-row">
+            <input class="share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
+            <button class="btn btn-primary" id="btn-import-share" disabled>Import</button>
+          </div>
+        </div>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
+
+    // Copy buttons
+    modal.querySelectorAll('.btn-copy-share').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const text = btn.dataset.copy === 'url' ? fullUrl : encoded;
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.innerHTML;
+          btn.innerHTML = icon('check',14) + ' Copied';
+          setTimeout(() => { btn.innerHTML = orig; }, 1200);
+        } catch (e) {
+          this._showToast('Copy failed', true);
+        }
+      });
+    });
+
+    // Import
+    const importField = modal.querySelector('.share-import-field');
+    const importBtn = modal.querySelector('#btn-import-share');
+    importField.addEventListener('input', () => {
+      importBtn.disabled = !importField.value.trim();
+    });
+    const doImport = async () => {
+      let raw = importField.value.trim();
+      if (!raw) return;
+      // Strip any leading URL/#s= prefix — accept both forms
+      const hashIdx = raw.indexOf('#s=');
+      if (hashIdx !== -1) raw = raw.slice(hashIdx + 3);
+      else if (raw.startsWith('s=')) raw = raw.slice(2);
+      try {
+        const imported = await decodeSet(raw);
+        overlay.remove();
+        this._showImportConfirmation(imported);
+      } catch (e) {
+        this._showToast('Invalid share data: ' + e.message, true);
+      }
+    };
+    importBtn.addEventListener('click', doImport);
+    importField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doImport(); }
+    });
+  }
+
+  _showImportConfirmation(payload) {
+    document.querySelector('.modal-overlay')?.remove();
+
+    const scaleCount = payload.scales.length;
+    const keyCount = payload.scales.reduce((n, s) => n + s.k.length, 0);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const modal = document.createElement('div');
+    modal.className = 'modal import-confirm';
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h2 class="modal-title">Import set</h2>
+        <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
+      </div>
+      <div class="modal-body">
+        <div class="share-label">Name</div>
+        <input class="share-field import-name-field" type="text" value="${payload.name || 'Imported'}">
+        <p class="import-summary">${scaleCount} ${scaleCount === 1 ? 'scale' : 'scales'} · ${keyCount} key ${keyCount === 1 ? 'color' : 'colors'}</p>
+        <div class="import-actions">
+          <button class="btn btn-secondary" id="btn-import-cancel">Cancel</button>
+          <button class="btn btn-primary" id="btn-import-confirm">Import</button>
+        </div>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const nameField = modal.querySelector('.import-name-field');
+    nameField.focus(); nameField.select();
+
+    modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
+    modal.querySelector('#btn-import-cancel').addEventListener('click', () => overlay.remove());
+
+    modal.querySelector('#btn-import-confirm').addEventListener('click', () => {
+      const name = nameField.value.trim() || payload.name || 'Imported';
+      const config = this._payloadToConfig(payload);
+      const id = this.store.create(name, config);
+      this._switchSet(id);
+      overlay.remove();
+      this._showToast(`Imported "${this.store.getActive().name}"`);
+    });
+
+    nameField.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        modal.querySelector('#btn-import-confirm').click();
+      }
+    });
+  }
+
   _showToast(msg, isError) {
     // Remove any existing toast
     const old = document.querySelector('.toast-notification');
@@ -609,6 +843,9 @@ class App {
             ${icon('gear',16)}
           </button>
         </div>
+        <button class="btn btn-secondary btn-icon-only" id="btn-share" data-tooltip="Share">
+          ${icon('share',16)}
+        </button>
         <button class="btn btn-primary" id="btn-export">
           ${icon('export',16)}
           Export
@@ -632,6 +869,7 @@ class App {
       this._toggleSettingsPopover(header.querySelector('.settings-wrap'));
     });
     header.querySelector('#btn-export').addEventListener('click', () => this._showExportModal());
+    header.querySelector('#btn-share').addEventListener('click', () => this._showShareDialog());
     header.querySelector('#btn-set-switcher').addEventListener('click', (e) => {
       e.stopPropagation();
       this._toggleSetDropdown(header.querySelector('.set-switcher-wrap'));

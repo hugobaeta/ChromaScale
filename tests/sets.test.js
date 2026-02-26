@@ -10,7 +10,10 @@ globalThis.localStorage = {
   clear: () => store.clear()
 };
 
-const { SetStore, SETS_KEY, OLD_KEY } = require('../sets.js');
+const {
+  SetStore, SETS_KEY, OLD_KEY,
+  encodeSet, decodeSet, base64urlEncode, base64urlDecode
+} = require('../sets.js');
 
 beforeEach(() => store.clear());
 
@@ -292,5 +295,99 @@ describe('SetStore — migration from v3.x localStorage', () => {
     const s = new SetStore();
     s.load();
     assert.equal(s.sets.length, 0);
+  });
+});
+
+// ------------------------------------------------------------------
+
+describe('base64url', () => {
+  it('round-trips arbitrary binary including + / padding edge cases', () => {
+    // bytes that would produce + and / in standard base64, plus lengths
+    // that exercise all three padding cases (0, 1, 2 padding chars)
+    const cases = [
+      new Uint8Array([251, 239, 190]),           // +++ in std b64
+      new Uint8Array([255, 255, 255, 255]),      // /// case
+      new Uint8Array([0]),                       // == padding
+      new Uint8Array([0, 0]),                    // = padding
+      new Uint8Array([0, 0, 0]),                 // no padding
+      new Uint8Array(Array.from({length: 256}, (_, i) => i)),  // full byte range
+    ];
+    for (const orig of cases) {
+      const enc = base64urlEncode(orig);
+      assert.ok(!/[+/=]/.test(enc), `encoding contains forbidden char: ${enc}`);
+      const dec = base64urlDecode(enc);
+      assert.deepEqual(Array.from(dec), Array.from(orig));
+    }
+  });
+});
+
+describe('encodeSet / decodeSet', () => {
+  const samplePayload = () => ({
+    v: 1,
+    name: 'Test Palette',
+    lMax: 1.0,
+    lMin: 0.15,
+    scales: [
+      { n: 'Blue', k: ['2c84db', '011a33'] },
+      { n: 'Red', k: ['e04343'], c: [[0, 0], [0.5, 0.3], [1, 0]] }
+    ]
+  });
+
+  it('round-trips a payload exactly', async () => {
+    const orig = samplePayload();
+    const enc = await encodeSet(orig);
+    assert.equal(typeof enc, 'string');
+    assert.ok(enc.length > 0);
+    assert.ok(!/[+/=#]/.test(enc), 'encoded string must be URL-safe');
+
+    const dec = await decodeSet(enc);
+    assert.equal(dec.v, 1);
+    assert.equal(dec.name, 'Test Palette');
+    assert.equal(dec.lMax, 1.0);
+    assert.equal(dec.lMin, 0.15);
+    assert.equal(dec.scales.length, 2);
+    assert.equal(dec.scales[0].n, 'Blue');
+    assert.deepEqual(dec.scales[0].k, ['2c84db', '011a33']);
+    assert.equal(dec.scales[0].c, undefined);  // omitted stays omitted
+    assert.deepEqual(dec.scales[1].c, [[0, 0], [0.5, 0.3], [1, 0]]);
+  });
+
+  it('rounds floats to 3 decimals', async () => {
+    const enc = await encodeSet({
+      v: 1, name: 'X', lMax: 0.123456789, lMin: 0.15,
+      scales: [{ n: 'A', k: ['888888'], c: [[0.111111, 0.999999]] }]
+    });
+    const dec = await decodeSet(enc);
+    assert.equal(dec.lMax, 0.123);
+    assert.deepEqual(dec.scales[0].c, [[0.111, 1]]);
+  });
+
+  it('rejects unsupported version', async () => {
+    const enc = await encodeSet({ v: 99, name: 'X', scales: [{ n: 'A', k: ['888'] }] });
+    await assert.rejects(decodeSet(enc), /unsupported.*v99/i);
+  });
+
+  it('rejects payload with no scales', async () => {
+    const enc = await encodeSet({ v: 1, name: 'X', scales: [] });
+    await assert.rejects(decodeSet(enc), /no scales/i);
+  });
+
+  it('rejects garbage input', async () => {
+    await assert.rejects(decodeSet('not-valid-base64-gzip-json'));
+  });
+
+  it('compresses meaningfully vs raw JSON', async () => {
+    // A realistic 9-scale payload should compress to well under raw JSON size
+    const big = {
+      v: 1, name: 'Big', lMax: 1, lMin: 0.15,
+      scales: Array.from({length: 9}, (_, i) => ({
+        n: `Scale${i}`,
+        k: Array.from({length: 9}, (_, j) => `${i}${j}aabb`.padStart(6, '0'))
+      }))
+    };
+    const enc = await encodeSet(big);
+    const rawLen = JSON.stringify(big).length;
+    // gzip + base64url should beat raw JSON for repetitive data
+    assert.ok(enc.length < rawLen, `encoded ${enc.length} should be < raw ${rawLen}`);
   });
 });

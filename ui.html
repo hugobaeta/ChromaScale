@@ -115,6 +115,7 @@
     <a href="#settings">Settings</a>
     <a class="toc-group" href="#overlays">Overlays</a>
     <a href="#modal">Export Modal</a>
+    <a href="#share">Share Dialog</a>
     <a href="#toast">Toast</a>
     <a class="toc-group" href="#patterns">Patterns</a>
     <a href="#out-of-range">Out-of-Range</a>
@@ -540,6 +541,66 @@
     <div class="note" style="margin-block-start:8px"><span class="cls">.modal-overlay</span> &gt; <span class="cls">.modal</span> &gt; <span class="cls">.modal-header</span> + <span class="cls">.modal-tabs</span> + <span class="cls">.modal-body</span> (<span class="cls">.export-version-selector</span>)</div>
   </div>
 
+  <h3 id="share">Share Dialog</h3>
+  <p>Encodes the current set as <code>#s=&lt;base64url(gzip(json))&gt;</code>. Two copy fields (full URL, params only) plus a paste-to-import field. Import opens a confirmation with an editable name — always creates a <em>new</em> set, never overwrites.</p>
+  <div class="demo-box">
+    <div class="modal share-dialog" style="position:relative;inline-size:100%;max-inline-size:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
+      <div class="modal-header">
+        <h2 class="modal-title">Share "My Palette"</h2>
+        <button class="btn-icon btn-close-modal" onclick="return false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="share-section">
+          <div class="share-label">Full URL</div>
+          <div class="share-row">
+            <input class="share-field" type="text" readonly value="file:///…/index.html#s=eyJ2IjoxLCJuYW1lIjoi…">
+            <button class="btn btn-secondary" onclick="return false">Copy</button>
+          </div>
+        </div>
+        <div class="share-section">
+          <div class="share-label">Parameters only</div>
+          <div class="share-row">
+            <input class="share-field" type="text" readonly value="eyJ2IjoxLCJuYW1lIjoi…">
+            <button class="btn btn-secondary" onclick="return false">Copy</button>
+          </div>
+        </div>
+        <div class="share-divider"></div>
+        <div class="share-section">
+          <div class="share-label">Import a set</div>
+          <div class="share-row">
+            <input class="share-field share-import-field" type="text" placeholder="Paste URL or parameters…">
+            <button class="btn btn-primary" disabled onclick="return false">Import</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.share-dialog</span> &gt; <span class="cls">.share-section</span> &gt; <span class="cls">.share-label</span> + <span class="cls">.share-row</span> &gt; <span class="cls">.share-field</span></div>
+  </div>
+
+  <h4>Import Confirmation</h4>
+  <div class="demo-box" style="max-inline-size:420px">
+    <div class="modal import-confirm" style="position:relative;inline-size:100%;max-inline-size:100%;animation:none;box-shadow:0 2px 8px rgba(0,0,0,0.1)">
+      <div class="modal-header">
+        <h2 class="modal-title">Import set</h2>
+        <button class="btn-icon btn-close-modal" onclick="return false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="share-label">Name</div>
+        <input class="share-field import-name-field" type="text" value="Brand 2026">
+        <p class="import-summary">6 scales · 47 key colors</p>
+        <div class="import-actions">
+          <button class="btn btn-secondary" onclick="return false">Cancel</button>
+          <button class="btn btn-primary" onclick="return false">Import</button>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-block-start:8px"><span class="cls">.import-confirm</span> <span class="cls">.import-name-field</span> <span class="cls">.import-summary</span> <span class="cls">.import-actions</span></div>
+  </div>
+
   <h3 id="toast">Toast</h3>
   <div class="demo-box">
     <div style="display:flex;gap:12px;align-items:center">
@@ -637,6 +698,7 @@
       <tr><td>Branding</td><td><code>.app-title</code></td></tr>
       <tr><td>Set Switcher</td><td><code>.set-switcher-wrap</code> <code>.set-switcher</code> <code>.set-switcher-name</code> <code>.set-dropdown</code> <code>.set-item-dot</code> <code>.set-item-active</code> <code>.set-item-count</code></td></tr>
       <tr><td>Sets Modal</td><td><code>.sets-modal</code> <code>.sets-list</code> <code>.set-card</code> <code>.set-card-active</code> <code>.set-swatch-strip</code> <code>.set-swatch</code> <code>.set-card-info</code> <code>.set-card-name</code> <code>.set-card-meta</code> <code>.set-card-actions</code> <code>.set-card-btn</code> <code>.set-card-btn-danger</code> <code>.set-rename-input</code> <code>.sets-footer</code></td></tr>
+      <tr><td>Share Dialog</td><td><code>.share-dialog</code> <code>.share-section</code> <code>.share-label</code> <code>.share-row</code> <code>.share-field</code> <code>.share-divider</code> <code>.share-import-field</code> <code>.import-confirm</code> <code>.import-name-field</code> <code>.import-summary</code> <code>.import-actions</code></td></tr>
       <tr><td>Buttons</td><td><code>.btn</code> <code>.btn-primary</code> <code>.btn-secondary</code> <code>.btn-ghost</code> <code>.btn-icon-only</code> <code>.btn-icon</code> <code>.btn-sm</code> <code>.btn-close-panel</code> <code>.btn-close-modal</code> <code>.btn-more</code> <code>.btn-add-color</code> <code>.btn-remove-color</code> <code>.swatch-action-btn</code></td></tr>
       <tr><td>Scale Column</td><td><code>.scale-column</code> <code>.selected</code> <code>.dimmed</code> <code>.source-active</code> <code>.dragging</code> <code>.drag-over-left</code> <code>.drag-over-right</code> <code>.scale-header</code> <code>.scale-header-bar</code> <code>.scale-name-input</code> <code>.drag-handle</code> <code>.header-badge</code> <code>.adjusted-badge</code></td></tr>
       <tr><td>Scale Menu</td><td><code>.scale-more-wrap</code> <code>.scale-dropdown</code> <code>.dropdown-item</code> <code>.dropdown-item-icon</code> <code>.dropdown-item-label</code> <code>.dropdown-item-danger</code> <code>.dropdown-divider</code></td></tr>
