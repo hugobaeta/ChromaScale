@@ -120,83 +120,91 @@ class Scale {
     }
 
     this.steps = [];
-    this.curvePoints = { C: [], H: [] };
     this.outOfRangeCount = 0;       // how many key colors are beyond step 900
     this.outOfRangeIndices = [];     // which indices are out of range
 
-    this._initCurves();
     this.generate();
   }
 
-  _initCurves() {
+  // Curve points are a derived *view* of keyColors — no longer stored.
+  // Each interior point (index 1..n) corresponds to one key color.
+  // Endpoints (index 0 and n+1) are fixed synthetic points.
+  //   x ∈ (0,1):  L = lMax − x·(lMax − lMin)
+  //   C-curve y:  chroma
+  //   H-curve y:  hue
+  // Endpoints: start = {x:0, C:0, H:firstKey.H}, end = {x:1, C:0, H:lastKey.H}
+  get curvePoints() {
     const lMax = this.manager ? this.manager.lightnessMax : 1.0;
     const lMin = this.manager ? this.manager.lightnessMin : 0.15;
     const lRange = lMax - lMin;
+
     const allOklch = this.keyColors.map(hex => ColorEngine.hexToOklch(hex));
+    // Filter out-of-range (darker than step 900); use all if everything is out
+    const inRange = allOklch.filter(c => c.L >= lMin - 0.005);
+    const used = inRange.length > 0 ? inRange : allOklch;
+    // Sort by L descending → x ascending
+    const sorted = [...used].sort((a, b) => b.L - a.L);
 
-    // Filter out colors that are darker than the 900 level (lightnessMin)
-    // These are "out of range" — too dark to appear in the 0-900 scale
+    const xFor = (L) => lRange <= 0 ? 0.5 : Math.max(0.02, Math.min(0.98, (lMax - L) / lRange));
+
+    const cPts = [{ x: 0, y: 0 }];
+    const hPts = [{ x: 0, y: sorted[0]?.H ?? 0 }];
+    for (const c of sorted) {
+      const x = xFor(c.L);
+      cPts.push({ x, y: c.C });
+      hPts.push({ x, y: c.H });
+    }
+    cPts.push({ x: 1, y: 0 });
+    hPts.push({ x: 1, y: sorted[sorted.length - 1]?.H ?? 0 });
+    return { C: cPts, H: hPts };
+  }
+
+  // Compute which keyColors are darker than the step-900 lightness floor.
+  // Called at the start of generate() so the out-of-range indicators stay
+  // in sync when lMax/lMin change.
+  _computeOutOfRange() {
+    const lMin = this.manager ? this.manager.lightnessMin : 0.15;
     this.outOfRangeIndices = [];
-    const inRangeOklch = [];
-    const inRangeIdx = [];
-
-    allOklch.forEach((c, i) => {
-      if (c.L < lMin - 0.005) {
+    this.keyColors.forEach((hex, i) => {
+      if (ColorEngine.hexToOklch(hex).L < lMin - 0.005) {
         this.outOfRangeIndices.push(i);
-      } else {
-        inRangeOklch.push(c);
-        inRangeIdx.push(i);
       }
     });
-
     this.outOfRangeCount = this.outOfRangeIndices.length;
+  }
 
-    // Use only in-range colors for curve generation
-    const oklchColors = inRangeOklch.length > 0 ? inRangeOklch : allOklch;
-    const n = oklchColors.length;
+  // Set a key color from curve-editor coordinates.
+  // keyIdx is the interior point index (0-based into keyColors array,
+  // i.e. curve point index − 1 since endpoint 0 isn't a key color).
+  // Returns the gamut-clamped LCH so the editor can snap back.
+  setKeyColorFromCurve(keyIdx, x, C, H) {
+    const lMax = this.manager ? this.manager.lightnessMax : 1.0;
+    const lMin = this.manager ? this.manager.lightnessMin : 0.15;
+    const L = lMax - x * (lMax - lMin);
+    const clamped = ColorEngine.clampToGamut(
+      Math.max(0, Math.min(1, L)),
+      Math.max(0, C),
+      ((H % 360) + 360) % 360
+    );
+    this.keyColors[keyIdx] = ColorEngine.oklchToHex(clamped.L, clamped.C, clamped.H);
+    this.keyColors.sort((a, b) => ColorEngine.hexToOklch(b).L - ColorEngine.hexToOklch(a).L);
+    this.generate();
+    return clamped;
+  }
 
-    // Place each key color's C/H peak at the position in the linear L schedule
-    // that matches its natural lightness — this maximizes achievable chroma
-    // since gamut clamping is minimal when L matches the color's native value.
-    function naturalPosition(L) {
-      if (lRange <= 0) return 0.5;
-      return Math.max(0.02, Math.min(0.98, (lMax - L) / lRange));
-    }
-
-    if (n === 1) {
-      const c = oklchColors[0];
-      const pos = naturalPosition(c.L);
-      this.curvePoints = {
-        C: [
-          { x: 0, y: 0 },
-          { x: pos, y: c.C },
-          { x: 1, y: 0 }
-        ],
-        H: [
-          { x: 0, y: c.H },
-          { x: pos, y: c.H },
-          { x: 1, y: c.H }
-        ]
-      };
-    } else {
-      const cPoints = [{ x: 0, y: 0 }];
-      const hPoints = [{ x: 0, y: oklchColors[0].H }];
-
-      oklchColors.forEach((c) => {
-        const pos = naturalPosition(c.L);
-        cPoints.push({ x: pos, y: c.C });
-        hPoints.push({ x: pos, y: c.H });
-      });
-
-      cPoints.push({ x: 1, y: 0 });
-      hPoints.push({ x: 1, y: oklchColors[n - 1].H });
-
-      // Ensure ascending x order (key colors are sorted by L descending → pos ascending)
-      cPoints.sort((a, b) => a.x - b.x);
-      hPoints.sort((a, b) => a.x - b.x);
-
-      this.curvePoints = { C: cPoints, H: hPoints };
-    }
+  // Add a key color at a curve x-position by sampling the current curves.
+  // Returns the index of the new key color in the sorted array.
+  addKeyColorAtX(x) {
+    const pts = this.curvePoints;
+    const C = Math.max(0, ColorEngine.cubicHermiteInterpolate(pts.C, x));
+    const H = ((ColorEngine.interpolateHue(pts.H, x) % 360) + 360) % 360;
+    const lMax = this.manager ? this.manager.lightnessMax : 1.0;
+    const lMin = this.manager ? this.manager.lightnessMin : 0.15;
+    const L = lMax - x * (lMax - lMin);
+    const clamped = ColorEngine.clampToGamut(Math.max(0, Math.min(1, L)), C, H);
+    const hex = ColorEngine.oklchToHex(clamped.L, clamped.C, clamped.H);
+    this.addKeyColor(hex);
+    return this.keyColors.indexOf(hex);
   }
 
   addKeyColor(hex) {
@@ -210,21 +218,18 @@ class Scale {
       }
     }
     this.keyColors.splice(insertIdx, 0, hex);
-    this._initCurves();
     this.generate();
   }
 
   removeKeyColor(index) {
     if (this.keyColors.length <= 1) return;
     this.keyColors.splice(index, 1);
-    this._initCurves();
     this.generate();
   }
 
   updateKeyColor(index, hex) {
     this.keyColors[index] = hex;
     this.keyColors.sort((a, b) => ColorEngine.hexToOklch(b).L - ColorEngine.hexToOklch(a).L);
-    this._initCurves();
     this.generate();
   }
 
@@ -233,14 +238,17 @@ class Scale {
     const stepLabels = mgr ? mgr.stepLabels : DEFAULT_STEP_LABELS;
     const numSteps = stepLabels.length;
 
+    this._computeOutOfRange();
+    const curves = this.curvePoints;
+
     // Step 1: Sample desired L (linear), C, H
     const desired = [];
     for (let i = 0; i < numSteps; i++) {
       const step = stepLabels[i];
       const t = step / 900;
       const L = mgr ? mgr.getLinearL(step) : (1.0 - (1.0 - 0.15) * t);
-      const C = ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t);
-      const H = ColorEngine.interpolateHue(this.curvePoints.H, t);
+      const C = ColorEngine.cubicHermiteInterpolate(curves.C, t);
+      const H = ColorEngine.interpolateHue(curves.H, t);
       desired.push({
         label: step,
         t,
@@ -453,8 +461,9 @@ class Scale {
     const mgr = this.manager;
 
     const L = mgr ? mgr.getLinearL(label) : (1.0 - (1.0 - 0.15) * t);
-    const C = Math.max(0, ColorEngine.cubicHermiteInterpolate(this.curvePoints.C, t));
-    const H = ((ColorEngine.interpolateHue(this.curvePoints.H, t) % 360) + 360) % 360;
+    const curves = this.curvePoints;
+    const C = Math.max(0, ColorEngine.cubicHermiteInterpolate(curves.C, t));
+    const H = ((ColorEngine.interpolateHue(curves.H, t) % 360) + 360) % 360;
 
     const gamut = ColorEngine.clampToGamut(Math.max(0, Math.min(1, L)), C, H);
     const hex = ColorEngine.oklchToHex(gamut.L, gamut.C, gamut.H);
@@ -469,29 +478,19 @@ class Scale {
   }
 
   toConfig() {
+    // v5: curves are derived from keyColors — only keyColors are persisted.
     return {
       name: this.name,
-      keyColors: [...this.keyColors],
-      curvePoints: {
-        C: this.curvePoints.C.map(p => ({ x: p.x, y: p.y })),
-        H: this.curvePoints.H.map(p => ({ x: p.x, y: p.y }))
-      }
+      keyColors: [...this.keyColors]
     };
   }
 
   static fromConfig(config, manager) {
-    const scale = new Scale(config.name, config.keyColors, manager);
-    if (config.curvePoints) {
-      if (config.curvePoints.C) {
-        scale.curvePoints.C = config.curvePoints.C.map(p => ({ x: p.x, y: p.y }));
-      }
-      if (config.curvePoints.H) {
-        scale.curvePoints.H = config.curvePoints.H.map(p => ({ x: p.x, y: p.y }));
-      }
-      // Ignore L curve points from old configs — L is now a linear schedule
-    }
-    scale.generate();
-    return scale;
+    // Legacy configs with `curvePoints` are silently accepted — the field
+    // is ignored and curves re-derive from keyColors. This means pre-v5
+    // hand-tuned curve divergences are lost on load (documented breaking
+    // change in CHANGELOG).
+    return new Scale(config.name, config.keyColors, manager);
   }
 
   exportJSON() {
@@ -566,10 +565,7 @@ class ScaleManager {
   }
 
   regenerateAll() {
-    this.scales.forEach(s => {
-      s._initCurves();
-      s.generate();
-    });
+    this.scales.forEach(s => s.generate());
   }
 
   addScale(name, hexOrArray) {

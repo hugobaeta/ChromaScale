@@ -174,8 +174,8 @@ class App {
   }
 
   _loadConfigIntoManager(config) {
-    // ScaleManager.fromConfig handles legacy property names, curve points,
-    // and step-schedule defaults (if absent).
+    // ScaleManager.fromConfig handles legacy property names and step-schedule
+    // defaults (if absent). Pre-v5 curvePoints are silently ignored.
     this.manager.fromConfig({
       lightnessMax: config.lightnessMax,
       lightnessMin: config.lightnessMin,
@@ -187,7 +187,8 @@ class App {
   }
 
   _saveActiveSet() {
-    // Persist full manager config (includes curve points) to the active set
+    // Persist full manager config to the active set (v5: curves are derived
+    // from keyColors — not stored)
     const cfg = this.manager.toConfig();
     delete cfg.selectedId; // UI-ephemeral, don't store
     this.store.updateActive(cfg);
@@ -395,40 +396,15 @@ class App {
 
   // ---- URL sharing ----
 
-  // Compare curve point arrays with epsilon tolerance
-  _curvesMatch(a, b, eps = 1e-4) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (Math.abs(a[i].x - b[i].x) > eps || Math.abs(a[i].y - b[i].y) > eps) return false;
-    }
-    return true;
-  }
-
   // Build compact share payload from current manager state.
-  // Omits curve points that match _initCurves() output to keep URLs short.
+  // v5: curves are derived from keyColors — payload is just {n, k} per scale.
   _buildSharePayload() {
     const mgr = this.manager;
-    // Build a throwaway manager with matching limits so we can regenerate
-    // default curves for comparison (they depend on lMax/lMin).
-    const refMgr = new ScaleManager();
-    refMgr.lightnessMax = mgr.lightnessMax;
-    refMgr.lightnessMin = mgr.lightnessMin;
 
-    const scales = mgr.scales.map(s => {
-      const entry = {
-        n: s.name,
-        k: s.keyColors.map(h => h.replace(/^#/, ''))
-      };
-      // Default curves for these keys at these limits
-      const ref = new Scale(s.name, s.keyColors, refMgr);
-      if (!this._curvesMatch(s.curvePoints.C, ref.curvePoints.C)) {
-        entry.c = s.curvePoints.C.map(p => [p.x, p.y]);
-      }
-      if (!this._curvesMatch(s.curvePoints.H, ref.curvePoints.H)) {
-        entry.h = s.curvePoints.H.map(p => [p.x, p.y]);
-      }
-      return entry;
-    });
+    const scales = mgr.scales.map(s => ({
+      n: s.name,
+      k: s.keyColors.map(h => h.replace(/^#/, ''))
+    }));
 
     const payload = {
       v: 1,
@@ -455,18 +431,12 @@ class App {
       lightnessMin: payload.lMin ?? 0.15,
       stepLabels: payload.st,       // undefined → fromConfig falls back to defaults
       majorDivisor: payload.md,
-      scales: payload.scales.map(s => {
-        const cfg = {
-          name: s.n,
-          keyColors: s.k.map(h => '#' + h)
-        };
-        if (s.c || s.h) {
-          cfg.curvePoints = {};
-          if (s.c) cfg.curvePoints.C = s.c.map(([x, y]) => ({ x, y }));
-          if (s.h) cfg.curvePoints.H = s.h.map(([x, y]) => ({ x, y }));
-        }
-        return cfg;
-      })
+      // Legacy payloads with s.c/s.h (pre-v5 curve points) are silently
+      // ignored — keyColors in s.k are sufficient to derive curves.
+      scales: payload.scales.map(s => ({
+        name: s.n,
+        keyColors: s.k.map(h => '#' + h)
+      }))
     };
   }
 
@@ -620,6 +590,103 @@ class App {
     });
   }
 
+  _showAboutModal() {
+    document.querySelector('.modal-overlay')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    const modal = document.createElement('div');
+    modal.className = 'modal about-modal';
+    modal.innerHTML = `
+      <div class="modal-header">
+        <h2 class="modal-title">About</h2>
+        <button class="btn-icon btn-close-modal">${icon('x',16)}</button>
+      </div>
+      <div class="modal-body about-body">
+        <section>
+          <p>
+            ChromaScale exists to bridge a gap: brand teams create source colors for
+            identity and emotion, but products need full tonal ramps that hold up under
+            real accessibility constraints. This tool takes a handful of brand colors and
+            expands them into scales where WCAG contrast is guaranteed by construction —
+            not something you audit afterward.
+          </p>
+        </section>
+        <section>
+          <h3>How it works</h3>
+          <svg class="about-diagram" viewBox="0 0 480 180" xmlns="http://www.w3.org/2000/svg">
+            <!-- Step axis -->
+            <line x1="30" y1="40" x2="450" y2="40" stroke="var(--border)" stroke-width="1"/>
+            ${[0, 100, 200, 300, 400, 500, 600, 700, 800, 900].map(s => {
+              const x = 30 + (s / 900) * 420;
+              return `
+                <line x1="${x}" y1="36" x2="${x}" y2="44" stroke="var(--border-strong)" stroke-width="1"/>
+                <text x="${x}" y="28" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--text-muted)">${s}</text>
+              `;
+            }).join('')}
+            <!-- Linear L reference (diagonal, dashed) -->
+            <line x1="30" y1="48" x2="450" y2="60" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="3 2" opacity="0.5"/>
+            <text x="458" y="63" font-size="8" font-family="var(--font-mono)" fill="var(--text-muted)" opacity="0.6">L</text>
+            <!-- WCAG gap brackets (nested, each 100 steps wider than the tier above) -->
+            <!-- A: 400 gap (step 100 → 500) -->
+            <path d="M ${30 + (100/900)*420} 78 v 6 H ${30 + (500/900)*420} v -6" fill="none" stroke="var(--warning)" stroke-width="1.5"/>
+            <text x="${30 + (300/900)*420}" y="98" text-anchor="middle" font-size="9" font-weight="600" fill="var(--warning)">400 gap → 3:1 (A)</text>
+            <!-- AA: 500 gap (step 100 → 600) -->
+            <path d="M ${30 + (100/900)*420} 112 v 6 H ${30 + (600/900)*420} v -6" fill="none" stroke="var(--info)" stroke-width="1.5"/>
+            <text x="${30 + (350/900)*420}" y="132" text-anchor="middle" font-size="9" font-weight="600" fill="var(--info)">500 gap → 4.5:1 (AA)</text>
+            <!-- AAA: 600 gap (step 100 → 700) -->
+            <path d="M ${30 + (100/900)*420} 146 v 6 H ${30 + (700/900)*420} v -6" fill="none" stroke="var(--positive)" stroke-width="1.5"/>
+            <text x="${30 + (400/900)*420}" y="166" text-anchor="middle" font-size="9" font-weight="600" fill="var(--positive)">600 gap → 7:1 (AAA)</text>
+          </svg>
+          <p>
+            Scales are built in the <strong>OKLCH</strong> color space, where lightness
+            is perceptually uniform — step 500 is <em>actually</em> halfway between 0 and
+            900 in perceived brightness. Lightness follows a strict linear schedule, so
+            WCAG contrast ratios land at predictable step intervals regardless of hue.
+          </p>
+          <p>
+            Chroma and hue are interpolated as cubic Hermite splines through your source
+            colors, with chroma clamped to the sRGB gamut boundary at each step.
+          </p>
+        </section>
+        <section>
+          <h3>References</h3>
+          <ul class="about-refs">
+            <li><a href="https://bottosson.github.io/posts/oklab/" target="_blank" rel="noopener">Björn Ottosson — A perceptual color space for image processing</a></li>
+            <li><a href="https://evilmartians.com/chronicles/oklch-in-css-why-quit-rgb-hsl" target="_blank" rel="noopener">Evil Martians — OKLCH in CSS</a></li>
+            <li><a href="https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html" target="_blank" rel="noopener">WCAG 2.1 — Understanding SC 1.4.3: Contrast (Minimum)</a></li>
+            <li><a href="https://www.w3.org/TR/css-color-4/#ok-lab" target="_blank" rel="noopener">CSS Color Module Level 4 — OKLab and OKLCH</a></li>
+          </ul>
+        </section>
+        <section>
+          <h3>Feedback & License</h3>
+          <p>
+            <a href="https://github.com/hugobaeta/ChromaScale" target="_blank" rel="noopener">github.com/hugobaeta/ChromaScale ↗</a>
+            · MIT License
+          </p>
+        </section>
+        <section>
+          <h3>Thanks</h3>
+          <p>
+            Inspired by work on the <strong>Sail design system at Stripe</strong>.
+            Thanks to <strong>Koop</strong>, <strong>Vince Joy</strong>, and
+            <strong>Chase McCoy</strong> for the conversations and prior art that
+            shaped this.
+          </p>
+        </section>
+      </div>
+    `;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    modal.querySelector('.btn-close-modal').addEventListener('click', () => overlay.remove());
+    document.addEventListener('keydown', function escHandler(e) {
+      if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', escHandler); }
+    });
+  }
+
   _showToast(msg, isError) {
     // Remove any existing toast
     const old = document.querySelector('.toast-notification');
@@ -712,21 +779,6 @@ class App {
         const col = document.querySelector(`.scale-column[data-scale-id="${scale.id}"]`);
         if (col) {
           this._showSourcePopover(col, scale, col.querySelector('.scale-header'), true);
-          // Focus the newly added color's hex input
-          if (this._focusNewSourceInput) {
-            const targetHex = this._focusNewSourceInput;
-            this._focusNewSourceInput = null;
-            requestAnimationFrame(() => {
-              const inputs = col.querySelectorAll('.source-panel .hex-input');
-              for (const inp of inputs) {
-                if (inp.value === targetHex.toUpperCase()) {
-                  inp.focus();
-                  inp.select();
-                  break;
-                }
-              }
-            });
-          }
         }
       }
     }
@@ -826,6 +878,9 @@ class App {
     header.innerHTML = `
       <div class="header-left">
         <h1 class="app-title">ChromaScale</h1>
+        <button class="btn-icon btn-about" id="btn-about" data-tooltip="About">
+          ${icon('info',14)}
+        </button>
       </div>
       <div class="header-center">
         <div class="set-switcher-wrap">
@@ -861,6 +916,7 @@ class App {
     });
     header.querySelector('#btn-export').addEventListener('click', () => this._showExportModal());
     header.querySelector('#btn-share').addEventListener('click', () => this._showShareDialog());
+    header.querySelector('#btn-about').addEventListener('click', () => this._showAboutModal());
     header.querySelector('#btn-set-switcher').addEventListener('click', (e) => {
       e.stopPropagation();
       this._toggleSetDropdown(header.querySelector('.set-switcher-wrap'));
@@ -1521,6 +1577,7 @@ class App {
     
     const panel = document.createElement('div');
     panel.className = 'source-panel';
+    panel.dataset.scaleId = scale.id;
     if (skipAnimation) panel.style.animation = 'none';
     
     // Gradient strip (moved from main view)
@@ -1560,11 +1617,18 @@ class App {
     addColorBtn.innerHTML = icon('plus',14) + ' Add color';
     addColorBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-
       scale.addKeyColor('#ffffff');
-      this._focusNewSourceInput = '#ffffff';
+      this._syncCurveEditor(scale);
+      this._updateSwatches(scale);
+      this._refreshSourcePanel(scale);
       this._saveActiveSet();
-      this._render();
+      // Focus the new color's hex input
+      requestAnimationFrame(() => {
+        const inputs = panel.querySelectorAll('.hex-input');
+        for (const inp of inputs) {
+          if (inp.value === '#FFFFFF') { inp.focus(); inp.select(); break; }
+        }
+      });
     });
     footer.appendChild(addColorBtn);
     content.appendChild(footer);
@@ -1574,75 +1638,8 @@ class App {
     middleRow.className = 'source-panel-middle';
     middleRow.appendChild(gradCanvas);
     
-    // Color inputs list
-    const colorsList = document.createElement('div');
-    colorsList.className = 'source-panel-list';
-    
-    scale.keyColors.forEach((hex, idx) => {
-      const isOutOfRange = scale.outOfRangeIndices.includes(idx);
-      const row = document.createElement('div');
-      row.className = 'color-input-row' + (isOutOfRange ? ' out-of-range' : '');
-      
-      const swatch = document.createElement('div');
-      swatch.className = 'color-swatch-input';
-      swatch.style.backgroundColor = hex;
-      if (isOutOfRange) swatch.style.opacity = '0.4';
-      
-      const nativeInput = document.createElement('input');
-      nativeInput.type = 'color';
-      nativeInput.className = 'native-color-picker';
-      nativeInput.value = hex;
-      nativeInput.addEventListener('input', (e) => {
-        if (!this._colorPickerUndoPushed) {
-    
-          this._colorPickerUndoPushed = true;
-        }
-        scale.updateKeyColor(idx, e.target.value);
-        this._render();
-      });
-      nativeInput.addEventListener('change', () => {
-        this._colorPickerUndoPushed = false;
-        this._saveActiveSet();
-      });
-      swatch.appendChild(nativeInput);
-      
-      const textInput = document.createElement('input');
-      textInput.type = 'text';
-      textInput.className = 'hex-input';
-      textInput.value = hex.toUpperCase();
-      textInput.maxLength = 7;
-      if (isOutOfRange) textInput.style.opacity = '0.4';
-      textInput.addEventListener('change', (e) => {
-        let val = e.target.value.trim();
-        if (!val.startsWith('#')) val = '#' + val;
-        if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
-    
-          scale.updateKeyColor(idx, val.toLowerCase());
-          this._saveActiveSet();
-          this._render();
-        }
-      });
-      
-      row.appendChild(swatch);
-      row.appendChild(textInput);
-      
-      if (scale.keyColors.length > 1) {
-        const removeBtn = document.createElement('button');
-        removeBtn.className = 'btn-icon btn-remove-color';
-        removeBtn.innerHTML = icon('minus',12);
-        removeBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-    
-          scale.removeKeyColor(idx);
-          this._saveActiveSet();
-          this._render();
-        });
-        row.appendChild(removeBtn);
-      }
-      
-      colorsList.appendChild(row);
-    });
-    
+    // Color inputs list (extracted helper so curve editor can rebuild it)
+    const colorsList = this._buildSourceColorList(scale);
     middleRow.appendChild(colorsList);
     content.appendChild(middleRow);
     
@@ -1994,13 +1991,16 @@ class App {
     
     const steps = Math.max(h, 256);
     const stepH = h / steps;
-    
+    // Cache derived curve points — the getter re-computes OKLCH for every
+    // key color on each read; don't hit it 256 times per frame.
+    const curves = scale.curvePoints;
+
     for (let i = 0; i < steps; i++) {
       const t = i / steps;
       const step = t * 900;
       let L = this.manager.getLinearL(step);
-      const C = ColorEngine.cubicHermiteInterpolate(scale.curvePoints.C, t);
-      const H = ColorEngine.interpolateHue(scale.curvePoints.H, t);
+      const C = ColorEngine.cubicHermiteInterpolate(curves.C, t);
+      const H = ColorEngine.interpolateHue(curves.H, t);
       
       const gamut = ColorEngine.clampToGamut(
         Math.max(0, Math.min(1, L)),
@@ -2070,39 +2070,48 @@ class App {
 
     const help = document.createElement('div');
     help.className = 'curve-help';
-    help.textContent = 'Click curve to add point · Drag to adjust · Right-click/dbl-click to remove · Red zones = contrast constraint limits';
+    help.textContent = 'Points = source colors · Click curve to add · Drag to adjust (snaps to step) · Right-click/dbl-click to remove · Red zones = contrast limits';
     sidebarWrap.appendChild(help);
 
     panelContent.appendChild(sidebarWrap);
 
     panel.appendChild(panelContent);
     this.root.appendChild(panel);
-    
-    // Create curve editor
+
+    // Create curve editor with the v5 paired-callback interface.
+    // Curve points ARE key colors — dragging updates keyColors live,
+    // add/remove affects both C and H curves + the source panel.
     if (this.curveEditor) this.curveEditor.destroy();
-    this._curveUndoPushed = false;
-    this.curveEditor = new CurveEditor(canvasContainer, (points) => {
-      if (!this._curveUndoPushed) {
-  
-        this._curveUndoPushed = true;
-      }
-      // Only C and H come from the editor; L is fixed
-      selected.curvePoints.C = points.C;
-      selected.curvePoints.H = points.H;
-      selected.generate();
-      this._updateConstraintBounds(selected);
-      this._updateSwatches(selected);
+    this.curveEditor = new CurveEditor(canvasContainer, {
+      onMovePoint: (interiorIdx, x, cY, hY) => {
+        const clamped = selected.setKeyColorFromCurve(interiorIdx, x, cY, hY);
+        this._updateConstraintBounds(selected);
+        this._updateSwatches(selected);
+        this._refreshSourcePanel(selected);
+        return clamped;
+      },
+      onAddPoint: (x) => {
+        const idx = selected.addKeyColorAtX(x);
+        this._syncCurveEditor(selected);
+        this._updateSwatches(selected);
+        this._refreshSourcePanel(selected);
+        return idx;
+      },
+      onRemovePoint: (interiorIdx) => {
+        selected.removeKeyColor(interiorIdx);
+        this._syncCurveEditor(selected);
+        this._updateSwatches(selected);
+        this._refreshSourcePanel(selected);
+      },
+      onDragEnd: () => this._saveActiveSet(),
     });
-    canvasContainer.addEventListener('mouseup', () => {
-      this._curveUndoPushed = false;
-      this._saveActiveSet();
-    });
+    this.curveEditor.setStepLabels(this.manager.stepLabels);
+    this.curveEditor.setLightnessRange(this.manager.lightnessMax, this.manager.lightnessMin);
 
     // Set L as non-interactive reference line (linear schedule)
     this._setCurveEditorLReference();
-    this.curveEditor.setPoints('C', selected.curvePoints.C);
-    this.curveEditor.setPoints('H', selected.curvePoints.H);
-    
+    this._syncCurveEditor(selected);
+
     // Show constraint bounds
     this._updateConstraintBounds(selected);
     
@@ -2131,6 +2140,125 @@ class App {
       { x: 0, y: this.manager.lightnessMax },
       { x: 1, y: this.manager.lightnessMin }
     ]);
+  }
+
+  // Reload both curve channels from the scale's derived curvePoints.
+  // Called after any keyColors mutation (add/remove/update) and on init.
+  _syncCurveEditor(scale) {
+    if (!this.curveEditor) return;
+    const pts = scale.curvePoints;
+    this.curveEditor.setPoints('C', pts.C);
+    this.curveEditor.setPoints('H', pts.H);
+  }
+
+  // Lightweight refresh of the open source panel without a full _render().
+  // Updates hex inputs, swatch backgrounds, and native color pickers.
+  // If key color *count* changed, rebuilds the list.
+  _refreshSourcePanel(scale) {
+    const panel = document.querySelector(`.source-panel[data-scale-id="${scale.id}"]`);
+    if (!panel) return;
+    const list = panel.querySelector('.source-panel-list');
+    if (!list) return;
+    const rows = list.querySelectorAll('.color-input-row');
+
+    if (rows.length !== scale.keyColors.length) {
+      // Count changed — rebuild the list and redraw gradient
+      const newList = this._buildSourceColorList(scale);
+      list.replaceWith(newList);
+      const title = panel.querySelector('.source-panel-title');
+      if (title) title.textContent = `Source colors · ${scale.keyColors.length}`;
+      const grad = panel.querySelector('.gradient-strip');
+      if (grad) this._drawGradientStrip(grad, scale);
+      return;
+    }
+
+    // Same count — in-place update
+    rows.forEach((row, idx) => {
+      const hex = scale.keyColors[idx];
+      const swatch = row.querySelector('.color-swatch-input');
+      const nativeInput = row.querySelector('.native-color-picker');
+      const textInput = row.querySelector('.hex-input');
+      const isOutOfRange = scale.outOfRangeIndices.includes(idx);
+      if (swatch) swatch.style.backgroundColor = hex;
+      if (nativeInput) nativeInput.value = hex;
+      if (textInput && document.activeElement !== textInput) {
+        textInput.value = hex.toUpperCase();
+      }
+      row.classList.toggle('out-of-range', isOutOfRange);
+    });
+    const grad = panel.querySelector('.gradient-strip');
+    if (grad) this._drawGradientStrip(grad, scale);
+  }
+
+  // Builds just the .source-panel-list element (extracted from _showSourcePopover
+  // so _refreshSourcePanel can rebuild on count change).
+  _buildSourceColorList(scale) {
+    const colorsList = document.createElement('div');
+    colorsList.className = 'source-panel-list';
+
+    scale.keyColors.forEach((hex, idx) => {
+      const isOutOfRange = scale.outOfRangeIndices.includes(idx);
+      const row = document.createElement('div');
+      row.className = 'color-input-row' + (isOutOfRange ? ' out-of-range' : '');
+
+      const swatch = document.createElement('div');
+      swatch.className = 'color-swatch-input';
+      swatch.style.backgroundColor = hex;
+      if (isOutOfRange) swatch.style.opacity = '0.4';
+
+      const nativeInput = document.createElement('input');
+      nativeInput.type = 'color';
+      nativeInput.className = 'native-color-picker';
+      nativeInput.value = hex;
+      nativeInput.addEventListener('input', (e) => {
+        scale.updateKeyColor(idx, e.target.value);
+        this._syncCurveEditor(scale);
+        this._updateSwatches(scale);
+        this._refreshSourcePanel(scale);
+      });
+      nativeInput.addEventListener('change', () => this._saveActiveSet());
+      swatch.appendChild(nativeInput);
+
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.className = 'hex-input';
+      textInput.value = hex.toUpperCase();
+      textInput.maxLength = 7;
+      if (isOutOfRange) textInput.style.opacity = '0.4';
+      textInput.addEventListener('change', (e) => {
+        let val = e.target.value.trim();
+        if (!val.startsWith('#')) val = '#' + val;
+        if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+          scale.updateKeyColor(idx, val.toLowerCase());
+          this._syncCurveEditor(scale);
+          this._updateSwatches(scale);
+          this._refreshSourcePanel(scale);
+          this._saveActiveSet();
+        }
+      });
+
+      row.appendChild(swatch);
+      row.appendChild(textInput);
+
+      if (scale.keyColors.length > 1) {
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'btn-icon btn-remove-color';
+        removeBtn.innerHTML = icon('minus',12);
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          scale.removeKeyColor(idx);
+          this._syncCurveEditor(scale);
+          this._updateSwatches(scale);
+          this._refreshSourcePanel(scale);
+          this._saveActiveSet();
+        });
+        row.appendChild(removeBtn);
+      }
+
+      colorsList.appendChild(row);
+    });
+
+    return colorsList;
   }
 
   _updateConstraintBounds(scale) {
@@ -2229,13 +2357,31 @@ class App {
   }
 
   _updateSwatches(scale) {
-    const col = document.querySelector(`[data-scale-id="${scale.id}"]`);
+    const col = document.querySelector(`.scale-column[data-scale-id="${scale.id}"]`);
     if (!col) return;
-    
+
+    // Preserve open source panel across the column rebuild — detach before
+    // replaceWith destroys it, re-attach to the new column's swatch-area.
+    const sourcePanel = col.querySelector('.source-panel:not(.closing)');
+    if (sourcePanel) sourcePanel.remove();
+
     const newCol = this._createScaleColumn(scale);
     col.replaceWith(newCol);
+
+    if (sourcePanel) {
+      const newSwatchArea = newCol.querySelector('.swatch-area');
+      if (newSwatchArea) {
+        newSwatchArea.appendChild(sourcePanel);
+        // Re-apply dim/active classes since _createScaleColumn doesn't set them
+        document.querySelectorAll('.scale-column').forEach(c => {
+          c.classList.toggle('dimmed', c !== newCol);
+          c.classList.toggle('source-active', c === newCol);
+        });
+      }
+    }
+
     this._scheduleGradientResize();
-    
+
     const validSection = document.querySelector('.validation-section');
     if (validSection) {
       const newValid = this._createContrastValidation(scale);

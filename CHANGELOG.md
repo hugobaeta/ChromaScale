@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+## [5.0.0] — 2026-03-02
+
+### Breaking — Curve ↔ KeyColor Unification
+- **Curve points are now a derived view of `keyColors`**, not stored state. One source of truth: the key-color hex list. Interior curve points correspond 1:1 to key colors; endpoints are fixed synthetic points (x=0 with C=0, x=1 with C=0).
+- `Scale.curvePoints` is now a **getter** — computed from `keyColors` + `manager.lightnessMax/Min` on every read. No caching (cheap enough).
+- **Removed**: `Scale._initCurves()`, stored `this.curvePoints` field, `curvePoints` in `toConfig()`/`fromConfig()`.
+- **Added**: `Scale.setKeyColorFromCurve(idx, x, cY, hY)` → returns clamped LCH for editor snap-back. `Scale.addKeyColorAtX(x)` → samples current curves, returns new index.
+- **Migration**: pre-v5 sets/URLs with hand-tuned curve points that diverged from key colors lose those divergences on v5 load — curves rebuild from `keyColors`. Silently handled (no error, no prompt).
+- **Share URL payload**: dropped `c`/`h` keys. Payload is now just `{n, k}` per scale. Legacy URLs with `c`/`h` are accepted (fields ignored).
+- **Lightness-limit bug fix**: changing `lightnessMax`/`lightnessMin` now correctly repositions curve x-positions (since curves are derived), superseding the 4.0.1 tradeoff.
+
+### Changed — Curve Editor Pairing
+- **Paired interaction model**: C and H curves share interior points. Dragging one curve's point moves the matching point on the other curve in X; Y moves only on the dragged curve. Click curve → adds a key color (both curves gain a point). Right-click/dbl-click → removes a key color (both curves lose a point).
+- **Callback interface**: constructor now takes `{onMovePoint, onAddPoint, onRemovePoint, onDragEnd}` instead of a single `onChange`. `onMovePoint` returns gamut-clamped LCH for snap-back.
+- **Snap-to-step on release**: dragged points snap to the nearest step label within ±0.012 t-threshold (≈ ±1 step at 35-step density). New `setStepLabels()` setter.
+- **Gamut snap-back on release**: after drag, the point is repositioned to the stored (clamped) LCH so the visual matches what's actually in `keyColors`.
+- **Paired-point highlight**: hovering/dragging a point draws a hollow ring on its counterpart on the other curve and a thin vertical hairline between them.
+- **Source panel live sync**: dragging a curve point updates the source panel's hex inputs/swatches in real-time without a full `_render()`. New `_syncCurveEditor()`, `_refreshSourcePanel()`, `_buildSourceColorList()` helpers.
+
+### Changed — Figma Push Refactor
+- **State architecture**: all form state lifted to `this.state`; `_render()` is now a pure view function. No more stale-value bugs.
+- **`fetchFile()`** (replaces `fetchCollections()`): returns both collections and full `variables` map from `/variables/local` in one call. Cached in state.
+- **`analyzeCollection()`**: parses collection's COLOR variables into `{prefix: {steps, vars:{step:varId}}}` structure via `{prefix}/{step}` name convention.
+- **`autoMap()`**: normalized-name matching of local scales → Figma prefixes. Unmatched default to `'skip'`.
+- **`buildPayload()` rewrite**: per-scale mapping (skip / create-new / target Figma prefix). UPDATE action for steps with existing var IDs, CREATE for new. Returns `{payload, summary:{createCount, updateCount, activeScales}}`.
+- **Mapping section** (shown only when targeting an existing collection): per-scale dropdown (skip / + create new / each Figma prefix), var-count meta. Step-mismatch notice with strategy select (Update existing only / Add missing steps).
+- **UI changes**: Load button moved from Collection section to File URL field. Steps section **removed** entirely — always uses `manager.stepLabels`. Summary shows UPDATE/CREATE counts instead of raw multiplication. Actions right-aligned, primary (Push) last.
+- **Removed prefs**: `STORAGE_KEY_STEPS` + `-list`.
+
+### Added — About Modal
+- `(i)` icon button in header-left next to title. Opens modal with: Origins (Stripe/Sail, credits to Koop, Vince Joy, Chase McCoy), math explanation (OKLCH uniformity, linear L schedule, Hermite splines, gamut clamping), references (Ottosson, Evil Martians, WCAG, CSS Color 4), MIT license note.
+- New `info`, `warning` icons in `icons.js`.
+- New `LICENSE` file (MIT).
+
+## [4.0.1] — 2026-03-02
+
+### Fixed
+- **Changing Steps wiped curve edits** — `regenerateAll()` no longer calls `_initCurves()`, so editing the step schedule in Settings no longer discards hand-tuned curve points. Curves sample at new positions via `generate()` alone.
+  - **Known tradeoff** (fixed properly in v5): lightness-limit changes no longer reposition curve x-positions relative to the new lMax/lMin. The points sample at their old x-positions. v5's derived-curve model fixes this correctly.
+- **Figma file URL reverted on UI interaction** — `savedFile` (and `savedPat`) are now mutable and synced on every input event, persisted on blur. Previously typing a new URL then clicking Load/Pick/Preset would revert the field to the stale value from `render()`.
+
 ## [4.0.0] — 2026-02-26
 
 ### Removed — Dark Mode

@@ -46,7 +46,7 @@ ChromaScale is a professional-grade color scale generation tool built on the OKL
 - **Curve panel** (when open): Docked to bottom, `max-height: 44vh`, slides up with animation
 
 #### Header
-- **Left**: App title "ChromaScale" (14px, weight 700)
+- **Left**: App title "ChromaScale" (14px, weight 700) + small `(i)` About icon button
 - **Center**: Set switcher dropdown (`.btn.btn-secondary` trigger with "Set:" prefix + active set name + caret), Settings button (gear + "Settings" label)
 - **Right**: Share (share icon + label), Export (primary, accent)
 - No Save/Reset buttons — state auto-saves on every mutation
@@ -127,10 +127,12 @@ Each column contains:
 - **X-axis labels**: Step numbers (0, 100, 200…900) in mono 10px
 - **Y-axis labels**: Normalized values (0.00–1.00) in mono 10px
 
-#### Interactions
-- **Click on curve**: Add new control point
-- **Drag point**: Adjust position (X clamped between neighbors, Y clamped to channel range)
-- **Right-click / double-click point**: Remove it (except endpoints for L curve)
+#### Interactions (v5: paired model)
+- **Curve points ARE key colors** — each interior point (index 1..n) corresponds 1:1 to a key color in the source panel. Endpoints (index 0 and n+1) are fixed synthetic points (C=0 at both ends, H inherited from first/last key color).
+- **Click on curve**: Adds a new key color at that x-position (sampling the current curve's C/H). Both C and H curves gain a point simultaneously. The source panel list updates live.
+- **Drag point**: X moves on BOTH channels (paired); Y moves only on the dragged channel. On release: snap-to-step (within ±0.012 threshold) then gamut-clamp snap-back (point repositions to what's actually stored after hex quantization).
+- **Right-click / double-click interior point**: Removes the key color from both curves and the source panel. Endpoints and the last remaining key color cannot be removed.
+- **Paired highlight**: Hovering a point on one curve draws a hollow ring on its counterpart on the other curve, connected by a thin vertical hairline.
 - **Hover on point**: Shows value label above point
 - **Highlight from swatch**: Clicking chart icon on a swatch row highlights that step's position on all curves
 
@@ -167,14 +169,13 @@ Each column contains:
 1. **CSS**: Shows `:root { --prefix-step: hex }`. Copy + Download buttons.
 2. **W3C Design Tokens**: DTCG format (`$value`, `$type`, `$description`) for Tokens Studio and variables import plugins. Flat `{ scaleName: {...} }` structure. Copy + Download.
 3. **Tailwind**: Version selector dropdown (v4 CSS-based / v3 JS config). v4 outputs `@theme { --color-prefix-step }`. v3 outputs `module.exports = { theme: { extend: { colors } } }` with raw hex values. Copy + Download.
-4. **Figma API**: Full Figma Variables push panel:
-   - Personal Access Token input (password field with toggle visibility)
-   - File URL/key input with live key extraction preview
-   - Collection name input
-   - Step preset selector (Major 19 / All 35 / Custom with chip picker)
-   - Summary: "N scales × N steps = N variables"
-   - Push button + Copy curl fallback
-   - Status messages (info/success/error)
+4. **Figma API**: Diff-and-map push panel (v5):
+   - **Connection**: PAT (password field + visibility toggle) + File URL/key with inline **Load** button
+   - **Collection**: Radio picker — "Create new" (with name input) OR any existing collection fetched via Load
+   - **Mapping** (only when targeting an existing collection): per-scale dropdown `(skip) / + create new / {each Figma prefix}`. Auto-matched by normalized name. Shows per-prefix var count. Step-mismatch warning banner with strategy select (Update existing only / Add missing steps).
+   - **Summary**: "N scales → X UPDATE, Y CREATE" with chips for active (non-skipped) scales
+   - **Actions** (right-aligned): Copy curl (secondary) + Push to Figma (primary)
+   - Always uses `manager.stepLabels` — no separate step picker
 
 ### 6. Settings Popover
 **Purpose**: Per-set generation parameters (lightness range + step schedule).
@@ -200,7 +201,7 @@ Each column contains:
 
 #### Encoding
 - `#s=` hash fragment. Payload: `JSON → gzip (native CompressionStream) → base64url`. Floats rounded to 3 decimals.
-- Compact keys: `{v, name, lMax, lMin, st?, md?, scales: [{n, k, c?, h?}]}`. `st`/`md` omitted if default. `c`/`h` omitted if unchanged from `_initCurves()` output (epsilon 1e-4).
+- Compact keys: `{v, name, lMax, lMin, st?, md?, scales: [{n, k}]}`. `st`/`md` omitted if default. v5: curves are derived from keyColors — no `c`/`h` keys emitted (legacy payloads with `c`/`h` are accepted and the fields ignored).
 
 #### Flow
 - Full URL + params-only fields with copy buttons
@@ -274,7 +275,7 @@ Each column contains:
   config: {                   // = ScaleManager.toConfig() minus selectedId
     lightnessMax, lightnessMin,
     stepLabels, majorDivisor,
-    scales: [{ name, keyColors, curvePoints? }, …]
+    scales: [{ name, keyColors }, …]  // v5: no curvePoints (derived)
   }
 }
 ```
@@ -283,8 +284,8 @@ Each column contains:
 Each `Scale` instance holds:
 - `id` — Unique identifier (`scale_timestamp_random`)
 - `name` — Display name
-- `keyColors[]` — Array of hex strings (source colors, sorted by luminance descending)
-- `curvePoints.C/H` — Arrays of `{x, y}` control points for Chroma and Hue channels
+- `keyColors[]` — Array of hex strings (source colors, sorted by luminance descending). **v5: single source of truth.**
+- `curvePoints` — **Getter** (not stored). Derives `{C: [{x,y}], H: [{x,y}]}` from `keyColors` + `manager.lightnessMax/Min` on every read. n key colors → n+2 curve points (2 endpoints + n interior).
 - `steps[]` — Generated step array (length = `manager.stepLabels.length`)
 
 ### Step Object Structure
@@ -306,13 +307,15 @@ Each `Scale` instance holds:
 ```
 
 ### Regeneration Flow
-1. User modifies source colors or curve points
+1. User modifies source colors (via hex input, native picker, or curve drag)
 2. `Scale.generate()` is called:
-   - Sample L/C/H from curves at 35 step positions
+   - Compute `outOfRangeIndices` from keyColors vs lMin
+   - Read `curvePoints` (derived getter — computes from keyColors + lMax/lMin)
+   - Sample L (linear) / C / H from curves at N step positions
    - Enforce WCAG contrast constraints on L values (iterative, 4 passes)
    - Gamut-clamp each color to sRGB
    - Verify actual RGB contrast ratios (post-clamp fix, 3 passes)
-3. UI re-renders affected column(s)
+3. UI re-renders affected column(s); curve editor re-syncs from `scale.curvePoints`
 
 ---
 

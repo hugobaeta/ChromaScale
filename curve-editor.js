@@ -1,10 +1,20 @@
-// ChromaScale — Curve Editor v3
-// Canvas-based C/H curve editor with L as non-interactive reference line
+// ChromaScale — Curve Editor v5
+// Canvas-based C/H curve editor with L as non-interactive reference line.
+// v5: Curve points ARE key colors. C and H curves share interior points —
+// dragging one curve's point moves the paired point on the other curve in X.
+// Add/remove operations affect both curves simultaneously.
 
 class CurveEditor {
-  constructor(container, onChange) {
+  // callbacks = {
+  //   onMovePoint: (interiorIdx, x, cY, hY) => {L, C, H}  — returns clamped LCH for snap-back
+  //   onAddPoint:  (x) => newInteriorIdx                  — returns index in sorted keyColors
+  //   onRemovePoint: (interiorIdx) => void
+  //   onDragEnd: () => void                               — save trigger
+  // }
+  // interiorIdx = curve point index − 1 (endpoint at index 0 isn't a key color)
+  constructor(container, callbacks) {
     this.container = container;
-    this.onChange = onChange;
+    this.callbacks = callbacks || {};
     this.canvas = document.createElement('canvas');
     this.ctx = null;
     this.dpr = window.devicePixelRatio || 1;
@@ -22,6 +32,12 @@ class CurveEditor {
 
     // Constraint boundaries for L curve
     this.constraintBounds = []; // [{t, minL, maxL}]
+
+    // Step labels for snap-to-step on release
+    this.stepLabels = null; // e.g. [0, 50, 100, ..., 900]
+    // Lightness endpoints (for gamut snap-back x calculation)
+    this.lMax = 1.0;
+    this.lMin = 0.15;
 
     this.dragging = null;
     this.hoveredChannel = null;
@@ -114,6 +130,17 @@ class CurveEditor {
     return this.channels[channel].points.map(p => ({ ...p }));
   }
 
+  // Step labels for snap-to-step on drag release
+  setStepLabels(labels) {
+    this.stepLabels = labels ? [...labels] : null;
+  }
+
+  // Lightness endpoints (for gamut snap-back reverse-mapping)
+  setLightnessRange(lMax, lMin) {
+    this.lMax = lMax;
+    this.lMin = lMin;
+  }
+
   // Set constraint bounds to visualize on L curve
   setConstraintBounds(bounds) {
     this.constraintBounds = bounds;
@@ -154,6 +181,8 @@ class CurveEditor {
     // Draw L first (behind interactive curves), then C and H
     this._drawCurve(ctx, 'L');
     for (const ch of ['H', 'C']) this._drawCurve(ctx, ch);
+    // Paired-point link line (vertical hairline between matched C/H points)
+    this._drawPairedLink(ctx);
     // Only draw points for interactive channels
     for (const ch of ['H', 'C']) this._drawPoints(ctx, ch);
     if (this.highlightT !== null) this._drawHighlightMarkers(ctx);
@@ -340,6 +369,55 @@ class CurveEditor {
     ctx.globalAlpha = 1;
   }
 
+  // Draw a subtle vertical hairline connecting paired C/H points at the
+  // hovered/dragged index. Also draws a hollow ring on the paired point.
+  _drawPairedLink(ctx) {
+    const idx = this.dragging ? this.dragging.index : (this.hoveredIndex >= 0 ? this.hoveredIndex : -1);
+    if (idx < 0) return;
+    const activeCh = this.dragging ? this.dragging.channel : this.hoveredChannel;
+    if (activeCh !== 'C' && activeCh !== 'H') return;
+
+    const cPts = this.channels.C.points;
+    const hPts = this.channels.H.points;
+    if (idx >= cPts.length || idx >= hPts.length) return;
+    // Endpoints (first/last) don't have pairs worth highlighting
+    if (idx === 0 || idx === cPts.length - 1) return;
+
+    const cPt = cPts[idx];
+    const hPt = hPts[idx];
+    const cNorm = this._normalize('C', cPt.y);
+    const hNorm = this._normalize('H', hPt.y);
+    const { px: cPx, py: cPy } = this._toPixel(cPt.x, Math.max(0, Math.min(1, cNorm)));
+    const { px: hPx, py: hPy } = this._toPixel(hPt.x, Math.max(0, Math.min(1, hNorm)));
+
+    const theme = this._getThemeColors();
+
+    // Vertical hairline between the two points (they share x, so cPx ≈ hPx)
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = theme.hoverLabel || '#888';
+    ctx.globalAlpha = 0.25;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cPx, Math.min(cPy, hPy));
+    ctx.lineTo(cPx, Math.max(cPy, hPy));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Hollow ring on the paired (non-active) channel's point
+    const pairedCh = activeCh === 'C' ? 'H' : 'C';
+    const pairedPx = pairedCh === 'C' ? cPx : hPx;
+    const pairedPy = pairedCh === 'C' ? cPy : hPy;
+    ctx.beginPath();
+    ctx.arc(pairedPx, pairedPy, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = this.channels[pairedCh].color;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   _drawPoints(ctx, channel) {
     const ch = this.channels[channel];
     if (!ch.interactive) return; // Skip drawing points for non-interactive channels
@@ -482,6 +560,11 @@ class CurveEditor {
     return best;
   }
 
+  _isEndpoint(idx) {
+    const n = this.channels.C.points.length;
+    return idx === 0 || idx === n - 1;
+  }
+
   _bindEvents() {
     this.canvas.addEventListener('mousedown', (e) => this._onMouseDown(e));
     this.canvas.addEventListener('mousemove', (e) => this._onMouseMove(e));
@@ -507,24 +590,30 @@ class CurveEditor {
     }
     const { px, py } = this._getMousePos(e);
     this._mouseDownPos = { px, py };
+    this._didDrag = false;
     const nearest = this._findNearestPoint(px, py, 14);
 
     if (nearest) {
-      this.dragging = { channel: nearest.channel, index: nearest.index, fixX: false };
+      // Grabbed an existing point — start dragging it
+      this.dragging = { channel: nearest.channel, index: nearest.index };
       this.canvas.style.cursor = 'grabbing';
     } else {
+      // Clicked on a curve — add a new key color at this x position.
+      // The callback updates keyColors, then the app reloads both channels'
+      // points via setPoints(). We then grab the new interior point.
       const nearestCurve = this._findNearestCurve(px, py);
-      if (nearestCurve) {
-        const { x, yNorm } = this._fromPixel(px, py);
-        const value = this._denormalize(nearestCurve, yNorm);
-        const ch = this.channels[nearestCurve];
-        ch.points.push({ x, y: value });
-        ch.points.sort((a, b) => a.x - b.x);
-        const newIdx = ch.points.findIndex(p => p.x === x && p.y === value);
-        this.dragging = { channel: nearestCurve, index: newIdx, fixX: false };
-        this.canvas.style.cursor = 'grabbing';
+      if (nearestCurve && this.callbacks.onAddPoint) {
+        const { x } = this._fromPixel(px, py);
+        // Clamp x away from exact endpoints (keyColors can't have L = exact lMax/lMin)
+        const clampedX = Math.max(0.02, Math.min(0.98, x));
+        const interiorIdx = this.callbacks.onAddPoint(clampedX);
+        // App has called setPoints() by now. Map interior idx → point idx.
+        const pointIdx = interiorIdx + 1;
+        if (pointIdx > 0 && pointIdx < this.channels.C.points.length - 1) {
+          this.dragging = { channel: nearestCurve, index: pointIdx };
+          this.canvas.style.cursor = 'grabbing';
+        }
         this.draw();
-        this._notify();
       }
     }
   }
@@ -533,22 +622,34 @@ class CurveEditor {
     const { px, py } = this._getMousePos(e);
 
     if (this.dragging) {
+      this._didDrag = true;
       const { x, yNorm } = this._fromPixel(px, py);
-      const ch = this.channels[this.dragging.channel];
-      const pt = ch.points[this.dragging.index];
+      const idx = this.dragging.index;
+      const activeCh = this.dragging.channel;
+      const cPts = this.channels.C.points;
+      const hPts = this.channels.H.points;
 
-      if (!this.dragging.fixX) {
-        const prevX = this.dragging.index > 0 ? ch.points[this.dragging.index - 1].x + 0.005 : 0;
-        const nextX = this.dragging.index < ch.points.length - 1 ? ch.points[this.dragging.index + 1].x - 0.005 : 1;
-        pt.x = Math.round(Math.max(prevX, Math.min(nextX, x)) * 1000) / 1000;
+      // Interior points: update X on BOTH channels (paired). Y only on active.
+      // Endpoints: X is fixed; only Y moves (but endpoints aren't grabbable
+      // in practice — they're not key colors).
+      if (!this._isEndpoint(idx)) {
+        const prevX = idx > 0 ? cPts[idx - 1].x + 0.005 : 0.02;
+        const nextX = idx < cPts.length - 1 ? cPts[idx + 1].x - 0.005 : 0.98;
+        const newX = Math.round(Math.max(prevX, Math.min(nextX, x)) * 1000) / 1000;
+        cPts[idx].x = newX;
+        hPts[idx].x = newX;
       }
 
-      pt.y = this._denormalize(this.dragging.channel, yNorm);
-      const yPrec = this.dragging.channel === 'H' ? 10 : 1000;
-      pt.y = Math.round(Math.max(ch.min, Math.min(ch.max, pt.y)) * yPrec) / yPrec;
+      // Y on active channel only
+      const ch = this.channels[activeCh];
+      const pt = ch.points[idx];
+      let newY = this._denormalize(activeCh, yNorm);
+      const yPrec = activeCh === 'H' ? 10 : 1000;
+      newY = Math.round(Math.max(ch.min, Math.min(ch.max, newY)) * yPrec) / yPrec;
+      pt.y = newY;
 
       this.draw();
-      this._notify();
+      this._notifyMove(idx);
     } else {
       const nearest = this._findNearestPoint(px, py, 14);
       if (nearest) {
@@ -569,22 +670,84 @@ class CurveEditor {
       const { px, py } = this._getMousePos(e);
       const dx = px - this._mouseDownPos.px;
       const dy = py - this._mouseDownPos.py;
-      if (Math.sqrt(dx * dx + dy * dy) < 3) {
-        // Click without drag — show point editor
+      const wasClick = Math.sqrt(dx * dx + dy * dy) < 3 && !this._didDrag;
+
+      if (wasClick && !this._isEndpoint(this.dragging.index)) {
+        // Click without drag on an interior point — show Y value editor
         const ch = this.channels[this.dragging.channel];
         const pt = ch.points[this.dragging.index];
         this._showPointEditor(this.dragging.channel, this.dragging.index, pt);
+      } else if (this._didDrag && !this._isEndpoint(this.dragging.index)) {
+        // Drag released on an interior point — snap-to-step, then gamut snap-back
+        const idx = this.dragging.index;
+        this._applySnapToStep(idx);
+        this._applyGamutSnapBack(idx);
+        if (this.callbacks.onDragEnd) this.callbacks.onDragEnd();
+      } else if (this._didDrag && this.callbacks.onDragEnd) {
+        this.callbacks.onDragEnd();
       }
     }
     this.dragging = null;
     this._mouseDownPos = null;
+    this._didDrag = false;
     this.canvas.style.cursor = 'crosshair';
   }
 
+  // Snap X to nearest step label if within threshold
+  _applySnapToStep(idx) {
+    if (!this.stepLabels || this.stepLabels.length === 0) return;
+    const cPts = this.channels.C.points;
+    const hPts = this.channels.H.points;
+    const curX = cPts[idx].x;
+    const stepTs = this.stepLabels.map(s => s / 900);
+    let nearest = stepTs[0];
+    for (const t of stepTs) {
+      if (Math.abs(t - curX) < Math.abs(nearest - curX)) nearest = t;
+    }
+    // Threshold ≈ ±1 step at 35-step density
+    if (Math.abs(nearest - curX) < 0.012) {
+      // Clamp to interior range (don't snap to exact 0 or 1)
+      const snapped = Math.max(0.02, Math.min(0.98, nearest));
+      cPts[idx].x = snapped;
+      hPts[idx].x = snapped;
+      this._notifyMove(idx);
+      this.draw();
+    }
+  }
+
+  // After drag release, ask the app to gamut-clamp and reverse-map the
+  // stored LCH back to curve coordinates so the point visually reflects
+  // what's actually stored.
+  _applyGamutSnapBack(idx) {
+    if (!this.callbacks.onMovePoint) return;
+    const cPts = this.channels.C.points;
+    const hPts = this.channels.H.points;
+    const clamped = this.callbacks.onMovePoint(
+      idx - 1, cPts[idx].x, cPts[idx].y, hPts[idx].y
+    );
+    if (!clamped || clamped.L == null) return;
+    // Reverse: L → x via linear schedule; C/H direct
+    const lRange = this.lMax - this.lMin;
+    const newX = lRange <= 0 ? 0.5 : Math.max(0.02, Math.min(0.98, (this.lMax - clamped.L) / lRange));
+    cPts[idx].x = newX;
+    hPts[idx].x = newX;
+    cPts[idx].y = Math.max(this.channels.C.min, Math.min(this.channels.C.max, clamped.C));
+    hPts[idx].y = ((clamped.H % 360) + 360) % 360;
+    this.draw();
+  }
+
   _onMouseLeave() {
+    // If dragging, treat as drag-end so we don't leave state half-applied
+    if (this.dragging && this._didDrag && !this._isEndpoint(this.dragging.index)) {
+      const idx = this.dragging.index;
+      this._applySnapToStep(idx);
+      this._applyGamutSnapBack(idx);
+      if (this.callbacks.onDragEnd) this.callbacks.onDragEnd();
+    }
     this.dragging = null;
     this.hoveredChannel = null;
     this.hoveredIndex = -1;
+    this._didDrag = false;
     this.canvas.style.cursor = 'crosshair';
     this.draw();
   }
@@ -596,25 +759,28 @@ class CurveEditor {
     const nearest = this._findNearestPoint(px, py, 14);
     if (!nearest) return;
 
-    const ch = this.channels[nearest.channel];
-    if (nearest.index === 0 || nearest.index === ch.points.length - 1) return;
-    if (ch.points.length <= 2) return;
+    // Can't remove endpoints, or the last remaining key color
+    if (this._isEndpoint(nearest.index)) return;
+    const n = this.channels.C.points.length;
+    if (n <= 3) return; // 3 points = 2 endpoints + 1 key color (min)
 
-    ch.points.splice(nearest.index, 1);
+    // Paired remove — callback removes the key color, app reloads both channels
+    if (this.callbacks.onRemovePoint) {
+      this.callbacks.onRemovePoint(nearest.index - 1);
+    }
     this.hoveredChannel = null;
     this.hoveredIndex = -1;
     this.draw();
-    this._notify();
   }
 
-  _notify() {
-    if (this.onChange) {
-      // Only report interactive channels (C and H) — L is fixed
-      this.onChange({
-        C: this.getPoints('C'),
-        H: this.getPoints('H')
-      });
-    }
+  // Fire onMovePoint for interior point at `idx` (curve point index).
+  // Returns the clamp result (or undefined).
+  _notifyMove(idx) {
+    if (this._isEndpoint(idx)) return;
+    if (!this.callbacks.onMovePoint) return;
+    const cPts = this.channels.C.points;
+    const hPts = this.channels.H.points;
+    return this.callbacks.onMovePoint(idx - 1, cPts[idx].x, cPts[idx].y, hPts[idx].y);
   }
 
   _showPointEditor(channel, index, pt) {
@@ -636,8 +802,10 @@ class CurveEditor {
       const val = parseFloat(input.value);
       if (!isNaN(val)) {
         pt.y = Math.max(ch.min, Math.min(ch.max, val));
+        this._notifyMove(index);
+        this._applyGamutSnapBack(index);
+        if (this.callbacks.onDragEnd) this.callbacks.onDragEnd();
         this.draw();
-        this._notify();
       }
       input.remove();
       this._pointInput = null;

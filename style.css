@@ -162,10 +162,12 @@ html, body {
 }
 
 .header-left, .header-actions { flex: 1 1 0; min-inline-size: 0; }
-.header-left { display: flex; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 6px; }
 .header-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .header-center { display: flex; gap: 6px; align-items: center; flex: 0 0 auto; }
 .app-title { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; }
+.btn-about { inline-size: 22px; block-size: 22px; opacity: 0.6; }
+.btn-about:hover { opacity: 1; }
 
 /* Narrow viewport: convert header to a two-row grid. Title top-left,
    share/export top-right, set+settings span the full second row.
@@ -535,6 +537,49 @@ select.field:is(:open, :focus) {
 
 /* === Share Dialog === */
 .share-dialog { inline-size: 520px; }
+
+/* About modal — slightly wider, prose-heavy content */
+.about-modal { inline-size: 560px; }
+.about-body { line-height: 1.6; }
+.about-body section + section { margin-block-start: 18px; }
+.about-body h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-block-end: 6px;
+}
+.about-body p { font-size: 12px; color: var(--text-secondary); }
+.about-body p + p { margin-block-start: 8px; }
+.about-body strong { color: var(--text); font-weight: 600; }
+.about-body code {
+  font-family: var(--font-mono); font-size: 11px;
+  background: var(--bg-muted); padding-block: 1px; padding-inline: 4px;
+  border-radius: 3px;
+}
+.about-refs {
+  list-style: none;
+  padding: 0;
+  font-size: 12px;
+}
+.about-refs li { margin-block-end: 6px; }
+.about-refs a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.about-refs a:hover { color: var(--text); text-decoration: underline; }
+.about-diagram {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  margin-block-end: 12px;
+  background: var(--bg-subtle);
+  border: var(--hairline) solid var(--border-faint);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+
 .share-section { margin-block-end: 14px; }
 .share-section:last-child { margin-block-end: 0; }
 .share-label {
@@ -1951,31 +1996,64 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
 .fap-checkbox-label input[type="checkbox"] {
   inline-size: 12px; block-size: 12px; margin: 0; accent-color: var(--accent);
 }
-.fap-naming-preview {
-  display: flex; flex-wrap: wrap; gap: 4px;
-  padding-block: 6px; padding-inline: 8px; background: var(--bg-muted);
-  border-radius: var(--radius-sm); border: 1px solid var(--border);
-}
-.fap-naming-preview code {
-  font-family: var(--font-mono); font-size: 10px;
-  background: var(--bg); padding-block: 1px; padding-inline: 5px;
-  border-radius: 3px; border: 1px solid var(--border);
-}
-
-/* Step presets — smaller buttons now that textarea handles custom entry */
-.fap-step-presets { display: flex; gap: 4px; margin-block-end: 8px; }
-.fap-preset-btn { justify-content: center; }
-.fap-steps-textarea {
-  inline-size: 100%;
-  min-block-size: 3lh;
-  resize: vertical;
-  line-height: 1.5;
-  margin-block-start: 4px;
-}
-.fap-step-error {
+/* Step-mismatch notice (existing collection has different step schedule) */
+.fap-mismatch-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-block: 8px; padding-inline: 10px;
+  margin-block-end: 10px;
+  background: var(--warning-subtle);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
   font-size: 11px;
-  color: var(--danger);
-  margin-block-start: 4px;
+  color: var(--warning-fg);
+}
+.fap-mismatch-notice svg { flex-shrink: 0; margin-block-start: 1px; }
+.fap-mismatch-notice code {
+  font-family: var(--font-mono); font-size: 10px;
+  background: var(--bg); padding-block: 0; padding-inline: 4px;
+  border-radius: 2px;
+}
+.fap-mismatch-text { flex: 1; }
+.fap-strategy-select { font-size: 11px; padding-block: 3px; padding-inline: 8px; }
+
+/* Per-scale mapping table (local name → Figma prefix) */
+.fap-mapping-table {
+  display: grid;
+  grid-template-columns: minmax(60px, auto) auto 1fr auto;
+  gap: 6px 8px;
+  align-items: center;
+}
+.fap-mapping-header {
+  display: contents;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.fap-mapping-header > span { padding-block-end: 4px; }
+.fap-mapping-row { display: contents; }
+.fap-local-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fap-mapping-arrow { color: var(--text-muted); font-size: 11px; }
+.fap-mapping-select {
+  font-size: 11px;
+  padding-block: 4px; padding-inline: 8px;
+  min-inline-size: 0;
+}
+.fap-mapping-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Collection picker (shown after "Load existing" fetches from Figma API) */
@@ -2048,11 +2126,11 @@ details[open] > .validation-summary-row::before { transform: rotate(90deg); }
   border-radius: 10px; color: var(--text-secondary);
 }
 
-/* Actions */
-.fap-actions { display: flex; gap: 8px; margin-block-start: 14px; }
-.fap-push-btn { flex: 1; justify-content: center; padding-block: 8px; padding-inline: 16px; font-size: 12px; font-weight: 600; }
+/* Actions — right-aligned, primary (Push) last */
+.fap-actions { display: flex; gap: 8px; margin-block-start: 14px; justify-content: flex-end; }
+.fap-push-btn { justify-content: center; padding-block: 8px; padding-inline: 16px; font-size: 12px; font-weight: 600; }
 .fap-push-btn:disabled { opacity: 0.6; cursor: wait; }
-.fap-curl-btn { flex-shrink: 0; padding-block: 8px; padding-inline: 14px; font-size: 12px; }
+.fap-curl-btn { padding-block: 8px; padding-inline: 14px; font-size: 12px; }
 
 /* Status */
 .fap-status {

@@ -117,6 +117,29 @@ describe('ScaleManager step config', () => {
     assert.deepEqual(mgr.stepLabels, DEFAULT_STEP_LABELS);
     assert.equal(mgr.majorDivisor, DEFAULT_MAJOR_DIVISOR);
   });
+
+  it('regenerateAll preserves curve edits (4.0.1 regression)', () => {
+    // In v5 curves are derived from keyColors, so "editing curves" means
+    // adding/editing key colors. This test verifies that changing the step
+    // schedule via setSteps()+regenerateAll() doesn't lose key-color data.
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Blue', '#3b82f6');
+    s.addKeyColor('#1e40af');
+    const keysBefore = [...s.keyColors];
+    const cBefore = s.curvePoints.C.map(p => ({ ...p }));
+
+    mgr.setSteps('0, 100, 200, 300, 400, 500, 600, 700, 800, 900');
+    mgr.regenerateAll();
+
+    assert.deepEqual(s.keyColors, keysBefore, 'keyColors should be unchanged');
+    assert.equal(s.steps.length, 10, 'step count should reflect new schedule');
+    // Curve points should be identical since they derive from keyColors + lMax/lMin
+    assert.equal(s.curvePoints.C.length, cBefore.length);
+    for (let i = 0; i < cBefore.length; i++) {
+      assert.ok(Math.abs(s.curvePoints.C[i].x - cBefore[i].x) < 1e-6);
+      assert.ok(Math.abs(s.curvePoints.C[i].y - cBefore[i].y) < 1e-6);
+    }
+  });
 });
 
 describe('getRequiredRatio', () => {
@@ -448,13 +471,13 @@ describe('ScaleManager serialization', () => {
     assert.equal(config.scales[0].blackLimit, undefined);
   });
 
-  it('Scale.toConfig does not include L curve points', () => {
+  it('Scale.toConfig does not include curvePoints (v5: derived)', () => {
     const mgr = new ScaleManager();
     const s = mgr.addScale('Blue', '#3b82f6');
     const config = s.toConfig();
-    assert.ok(config.curvePoints.C);
-    assert.ok(config.curvePoints.H);
-    assert.equal(config.curvePoints.L, undefined);
+    assert.equal(config.curvePoints, undefined);
+    assert.deepEqual(config.keyColors, ['#3b82f6']);
+    assert.equal(config.name, 'Blue');
   });
 
   it('fromConfig round-trips correctly', () => {
@@ -488,5 +511,95 @@ describe('ScaleManager serialization', () => {
     assert.equal(mgr.lightnessMax, 0.98);
     assert.equal(mgr.lightnessMin, 0.12);
     assert.equal(mgr.scales.length, 1);
+  });
+
+  it('fromConfig silently ignores legacy curvePoints (v5 migration)', () => {
+    // Pre-v5 configs persisted hand-tuned curvePoints. v5 derives curves
+    // from keyColors, so legacy curvePoints are ignored without error.
+    const cfg = {
+      name: 'Legacy',
+      keyColors: ['#3b82f6'],
+      curvePoints: { C: [{x:0,y:0},{x:0.7,y:0.3},{x:1,y:0}], H: [{x:0,y:100},{x:1,y:100}] }
+    };
+    const mgr = new ScaleManager();
+    const s = Scale.fromConfig(cfg, mgr);
+    assert.equal(s.keyColors.length, 1);
+    // Derived curve should have the key color's actual chroma, not the legacy 0.3
+    const keyC = ColorEngine.hexToOklch('#3b82f6').C;
+    const interiorC = s.curvePoints.C[1].y;
+    assert.ok(Math.abs(interiorC - keyC) < 0.01,
+      `derived C should match key color (${interiorC.toFixed(3)} vs ${keyC.toFixed(3)})`);
+  });
+});
+
+describe('Curve ↔ KeyColor unification (v5)', () => {
+  it('curvePoints getter derives from keyColors', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Test', ['#86b8eb', '#2c84db', '#0f4b87']);
+    const pts = s.curvePoints;
+    // n key colors → n+2 curve points (2 endpoints)
+    assert.equal(pts.C.length, 5);
+    assert.equal(pts.H.length, 5);
+    // Endpoints fixed
+    assert.equal(pts.C[0].x, 0);
+    assert.equal(pts.C[0].y, 0);
+    assert.equal(pts.C[4].x, 1);
+    assert.equal(pts.C[4].y, 0);
+    // Interior points should have ascending x
+    for (let i = 1; i < pts.C.length; i++) {
+      assert.ok(pts.C[i].x >= pts.C[i-1].x, 'C points x ascending');
+      assert.ok(pts.H[i].x >= pts.H[i-1].x, 'H points x ascending');
+    }
+  });
+
+  it('setKeyColorFromCurve updates keyColors from curve coords', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Test', '#2c84db');
+    // Set to a specific target position: x=0.5, C=0.1, H=180
+    const clamped = s.setKeyColorFromCurve(0, 0.5, 0.1, 180);
+    // Key color should now reflect the target L (lMax - 0.5 * (lMax-lMin) = 0.575)
+    const stored = ColorEngine.hexToOklch(s.keyColors[0]);
+    assert.ok(Math.abs(stored.L - 0.575) < 0.02,
+      `stored L ≈ 0.575, got ${stored.L.toFixed(3)}`);
+    // Returned clamp should match what was stored (modulo hex quantization)
+    assert.ok(Math.abs(clamped.L - stored.L) < 0.01);
+    assert.ok(Math.abs(clamped.C - stored.C) < 0.01);
+    // Curve point should now be near x=0.5
+    const ptsAfter = s.curvePoints;
+    assert.ok(Math.abs(ptsAfter.C[1].x - 0.5) < 0.02,
+      `curve x ≈ 0.5, got ${ptsAfter.C[1].x.toFixed(3)}`);
+  });
+
+  it('addKeyColorAtX samples the current curve', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Test', ['#86b8eb', '#0f4b87']);
+    const ptsBefore = s.curvePoints;
+    const expectedC = ColorEngine.cubicHermiteInterpolate(ptsBefore.C, 0.5);
+    const idx = s.addKeyColorAtX(0.5);
+    assert.equal(s.keyColors.length, 3);
+    assert.ok(idx >= 0 && idx < 3);
+    const newOklch = ColorEngine.hexToOklch(s.keyColors[idx]);
+    assert.ok(Math.abs(newOklch.C - Math.max(0, expectedC)) < 0.02,
+      `new key C ≈ sampled C (${newOklch.C.toFixed(3)} vs ${expectedC.toFixed(3)})`);
+  });
+
+  it('lightness limit change repositions curve x (keyColors unchanged)', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Test', '#2c84db');
+    const hexBefore = s.keyColors[0];
+    const xBefore = s.curvePoints.C[1].x;
+    mgr.setLightnessMax(0.9);
+    const xAfter = s.curvePoints.C[1].x;
+    assert.equal(s.keyColors[0], hexBefore, 'keyColors hex unchanged');
+    assert.ok(Math.abs(xAfter - xBefore) > 0.01,
+      `curve x should shift when lMax changes (${xBefore.toFixed(3)} → ${xAfter.toFixed(3)})`);
+  });
+
+  it('removing a key color removes its curve point', () => {
+    const mgr = new ScaleManager();
+    const s = mgr.addScale('Test', ['#86b8eb', '#2c84db', '#0f4b87']);
+    assert.equal(s.curvePoints.C.length, 5);
+    s.removeKeyColor(1);
+    assert.equal(s.curvePoints.C.length, 4);
   });
 });

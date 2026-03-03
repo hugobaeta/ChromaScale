@@ -656,30 +656,63 @@
   </div>
 
   <h3 id="figma-api">Figma API</h3>
-  <p>Inside the Figma API export tab. All classes prefixed <code>fap-</code>.</p>
-  <div class="demo-box" style="max-inline-size:400px">
+  <p>Inside the Figma API export tab. All classes prefixed <code>fap-</code>. v5: diff-and-map workflow — Load button inline with file URL, per-scale mapping table when targeting an existing collection, no separate Steps section.</p>
+  <div class="demo-box" style="max-inline-size:440px">
     <div class="figma-api-panel">
       <div class="fap-section">
         <div class="fap-section-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.78 7.78 5.5 5.5 0 017.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-          Authentication
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.78 7.78 5.5 5.5 0 017.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          Connection
         </div>
         <div class="fap-field">
-          <label class="fap-label">Personal Access Token</label>
-          <input class="fap-input fap-input-mono" type="password" placeholder="figd_...">
+          <label class="fap-label">Figma file URL or key</label>
+          <div class="fap-input-row">
+            <input class="fap-input" type="text" placeholder="https://figma.com/design/..." value="https://figma.com/design/abc123/My-File">
+            <button class="btn btn-secondary btn-sm" onclick="return false">Load</button>
+          </div>
+          <div class="fap-hint fap-file-key-preview">File key: abc123</div>
+        </div>
+      </div>
+      <div class="fap-section">
+        <div class="fap-section-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4H14M10 4H3M21 12H12M8 12H3M21 20H16M12 20H3M14 1v6M8 9v6M16 17v6"/></svg>
+          Mapping
+        </div>
+        <div class="fap-mismatch-notice">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+          <div class="fap-mismatch-text">
+            <div>Collection has steps <code>50,100,200…</code> (10) — ChromaScale has 35 steps.</div>
+            <div style="margin-block-start:6px">
+              <label class="fap-label" style="display:inline; margin-inline-end:6px">Strategy:</label>
+              <select class="field fap-strategy-select"><option>Update existing steps only</option><option>Add missing steps</option></select>
+            </div>
+          </div>
+        </div>
+        <div class="fap-mapping-table">
+          <div class="fap-mapping-header"><span>Local</span><span></span><span>Figma</span><span></span></div>
+          <div class="fap-mapping-row">
+            <span class="fap-local-name">Gray</span>
+            <span class="fap-mapping-arrow">→</span>
+            <select class="field fap-mapping-select"><option>gray</option></select>
+            <span class="fap-mapping-meta">10 vars</span>
+          </div>
+          <div class="fap-mapping-row">
+            <span class="fap-local-name">Blue</span>
+            <span class="fap-mapping-arrow">→</span>
+            <select class="field fap-mapping-select"><option>(skip)</option></select>
+            <span class="fap-mapping-meta"></span>
+          </div>
         </div>
       </div>
       <div class="fap-summary">
-        <div class="fap-summary-line"><span class="fap-summary-count">19</span> steps &times; <span class="fap-summary-count">9</span> scales = <span class="fap-summary-count">171</span> variables</div>
+        <div class="fap-summary-line">1 scale → <span class="fap-summary-count">10</span> UPDATE</div>
         <div class="fap-scales-list" style="margin-block-start:6px">
           <span class="fap-scale-chip">Gray</span>
-          <span class="fap-scale-chip">Red</span>
-          <span class="fap-scale-chip">Blue</span>
         </div>
       </div>
       <div class="fap-actions">
+        <button class="btn btn-secondary fap-curl-btn" onclick="return false">Copy curl</button>
         <button class="btn btn-primary fap-push-btn" onclick="return false">Push to Figma</button>
-        <button class="btn btn-secondary fap-curl-btn" onclick="return false">cURL</button>
       </div>
     </div>
   </div>
@@ -721,7 +754,8 @@
       <tr><td>Toast</td><td><code>.toast-notification</code> <code>.visible</code> <code>.toast-error</code></td></tr>
       <tr><td>Modal</td><td><code>.modal-overlay</code> <code>.modal</code> <code>.modal-header</code> <code>.modal-title</code> <code>.modal-tabs</code> <code>.modal-tabs-spacer</code> <code>.modal-tab</code> <code>.modal-body</code> <code>.export-section</code> <code>.export-code</code> <code>.export-note</code> <code>.export-actions</code> <code>.export-version-selector</code> <code>.export-format-wrap</code> <code>.export-format-label</code> <code>.export-select</code></td></tr>
       <tr><td>Form Fields</td><td><code>.field</code> <code>.field-mono</code> (shared button-style base; applied to inputs/selects/textareas alongside component-specific classes)</td></tr>
-      <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-naming-preview</code> <code>.fap-step-presets</code> <code>.fap-preset-btn</code> <code>.fap-steps-textarea</code> <code>.fap-step-error</code> <code>.fap-collections-list</code> <code>.fap-collection-item</code> <code>.fap-col-radio</code> <code>.fap-col-info</code> <code>.fap-col-name</code> <code>.fap-col-meta</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
+      <tr><td>Figma API</td><td><code>.figma-api-panel</code> <code>.fap-section</code> <code>.fap-section-title</code> <code>.fap-field</code> <code>.fap-label</code> <code>.fap-input</code> <code>.fap-input-mono</code> <code>.fap-input-row</code> <code>.fap-hint</code> <code>.fap-hint-sep</code> <code>.fap-link</code> <code>.fap-checkbox-label</code> <code>.fap-collections-list</code> <code>.fap-collection-item</code> <code>.fap-col-radio</code> <code>.fap-col-info</code> <code>.fap-col-name</code> <code>.fap-col-meta</code> <code>.fap-mismatch-notice</code> <code>.fap-mismatch-text</code> <code>.fap-strategy-select</code> <code>.fap-mapping-table</code> <code>.fap-mapping-header</code> <code>.fap-mapping-row</code> <code>.fap-local-name</code> <code>.fap-mapping-arrow</code> <code>.fap-mapping-select</code> <code>.fap-mapping-meta</code> <code>.fap-summary</code> <code>.fap-summary-line</code> <code>.fap-summary-count</code> <code>.fap-summary-dim</code> <code>.fap-scales-list</code> <code>.fap-scale-chip</code> <code>.fap-actions</code> <code>.fap-push-btn</code> <code>.fap-curl-btn</code> <code>.fap-status</code> <code>.fap-status-info</code> <code>.fap-status-success</code> <code>.fap-status-error</code> <code>.fap-curl-output</code></td></tr>
+      <tr><td>About Modal</td><td><code>.about-modal</code> <code>.about-body</code> <code>.about-refs</code> <code>.btn-about</code></td></tr>
     </tbody>
   </table>
 

@@ -1,23 +1,43 @@
-// ChromaScale — Figma Push Module
-// Pushes color variables to Figma via the Variables REST API
+// ChromaScale — Figma Push Module v5
+// Diff-and-map workflow: load existing collection variables, per-scale mapping
+// (local → Figma prefix or skip), step-mismatch detection with strategy toggle.
 
 class FigmaPusher {
   constructor() {
     this.STORAGE_KEY_PAT = 'chromascale-figma-pat';
     this.STORAGE_KEY_FILE = 'chromascale-figma-file';
     this.STORAGE_KEY_COLLECTION = 'chromascale-figma-collection';
-    this.STORAGE_KEY_STEPS = 'chromascale-figma-steps';
 
+    // All form state lives here; render() is a pure view of this.state.
+    this.state = null;
+    this._container = null;
+    this._manager = null;
   }
 
-  // Step presets sourced from the live manager (respects per-set step config)
-  _majorSteps(mgr) { return mgr.majorSteps(); }
-  _allSteps(mgr) { return [...mgr.stepLabels]; }
+  _initState() {
+    return {
+      pat: this.loadPref(this.STORAGE_KEY_PAT),
+      fileUrl: this.loadPref(this.STORAGE_KEY_FILE),
+      collectionName: this.loadPref(this.STORAGE_KEY_COLLECTION) || 'Colors',
 
-  // Fetch existing variable collections from the file.
-  // Returns [{ id, name, modes: [{modeId, name}], variableCount, defaultModeId }]
-  // Throws on network/auth errors with a useful message.
-  async fetchCollections(pat, fileKey) {
+      // Runtime (cleared on panel reopen)
+      loadedCollections: null,   // null=not loaded, []=empty, [{id,name,...}]
+      allVariables: null,        // full data.meta.variables from fetch
+      targetCollection: null,    // {id, name, defaultModeId} or null=create-new
+      collectionAnalysis: null,  // { prefixes: {gray: {steps:[], vars:{}}}, allSteps:Set }
+      scaleMapping: {},          // { [localScaleName]: 'skip' | 'new' | figmaPrefix }
+      stepStrategy: 'existing-only', // or 'add-missing'
+
+      loading: false,
+      loadError: '',
+    };
+  }
+
+  // --- API layer ---
+
+  // Fetch collections + variables from the file in one call.
+  // /variables/local returns both collections and variables.
+  async fetchFile(pat, fileKey) {
     const res = await fetch(`https://api.figma.com/v1/files/${fileKey}/variables/local`, {
       headers: { 'X-Figma-Token': pat }
     });
@@ -26,9 +46,8 @@ class FigmaPusher {
       throw new Error(`Figma API ${res.status}: ${body.slice(0, 200)}`);
     }
     const data = await res.json();
-    const collections = data.meta?.variableCollections || {};
-    return Object.values(collections)
-      .filter(c => !c.remote) // only local (editable) collections
+    const collections = Object.values(data.meta?.variableCollections || {})
+      .filter(c => !c.remote)
       .map(c => ({
         id: c.id,
         name: c.name,
@@ -36,77 +55,136 @@ class FigmaPusher {
         defaultModeId: c.defaultModeId,
         variableCount: (c.variableIds || []).length
       }));
+    return {
+      collections,
+      variables: data.meta?.variables || {}
+    };
   }
 
-  // Extract file key from URL or raw key
+  // Parse all COLOR variables in a collection into prefix→step→varId map.
+  // Variable names are expected to follow "{prefix}/{step}" convention.
+  analyzeCollection(variables, collectionId) {
+    const colVars = Object.values(variables).filter(
+      v => v.variableCollectionId === collectionId && v.resolvedType === 'COLOR'
+    );
+    const prefixes = {};
+    for (const v of colVars) {
+      const m = v.name.match(/^(.+)\/(\d+)$/);
+      if (!m) continue;
+      const [, prefix, stepStr] = m;
+      const step = parseInt(stepStr, 10);
+      if (!prefixes[prefix]) prefixes[prefix] = { steps: [], vars: {} };
+      prefixes[prefix].steps.push(step);
+      prefixes[prefix].vars[step] = v.id;
+    }
+    for (const p of Object.values(prefixes)) p.steps.sort((a, b) => a - b);
+    const allSteps = new Set(Object.values(prefixes).flatMap(p => p.steps));
+    return { prefixes, allSteps };
+  }
+
+  // Auto-match local scale names → Figma prefixes by normalized name.
+  // Unmatched locals default to 'skip'.
+  autoMap(localScales, figmaPrefixes) {
+    const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const figmaNorm = Object.keys(figmaPrefixes).map(p => [normalize(p), p]);
+    const mapping = {};
+    for (const scale of localScales) {
+      const norm = normalize(scale.name);
+      const match = figmaNorm.find(([n]) => n === norm);
+      mapping[scale.name] = match ? match[1] : 'skip';
+    }
+    return mapping;
+  }
+
+  // --- Payload construction ---
+
   parseFileKey(input) {
     if (!input) return null;
     input = input.trim();
-    // Match figma.com/design/{key}/... or figma.com/file/{key}/...
     const urlMatch = input.match(/figma\.com\/(?:design|file)\/([a-zA-Z0-9]+)/);
     if (urlMatch) return urlMatch[1];
-    // Raw key (alphanumeric, typically 20+ chars)
     if (/^[a-zA-Z0-9]{10,}$/.test(input)) return input;
     return null;
   }
 
-  // Convert hex to Figma RGBA (0–1 range)
   hexToFigmaColor(hex) {
     const rgb = ColorEngine.hexToRgb(hex);
     return { r: rgb[0] / 255, g: rgb[1] / 255, b: rgb[2] / 255, a: 1 };
   }
 
-  // Build the API payload for creating variables.
-  // If existingCollection is passed ({id, defaultModeId}), variables are
-  // CREATEd into that collection using its real id + default mode id.
-  // Otherwise a fresh collection is CREATEd with a temp id.
-  buildPayload(scales, selectedSteps, collectionName, existingCollection = null) {
-    const useExisting = !!existingCollection;
-    const colId = useExisting ? existingCollection.id : 'tmp_col_' + Date.now();
-    const modeId = useExisting ? existingCollection.defaultModeId : 'tmp_mode_default';
+  _hexForStep(scale, step) {
+    const existing = scale.steps.find(s => s.label === step);
+    return existing ? existing.hex : scale.sampleStep(step).hex;
+  }
+
+  _stepsEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+
+  // Build the POST payload + summary counts.
+  // Uses this.state for mapping/strategy; returns { payload, summary }.
+  buildPayload(manager) {
+    const { targetCollection, collectionAnalysis, scaleMapping, stepStrategy, collectionName } = this.state;
+    const steps = manager.stepLabels;
+    const useExisting = !!targetCollection;
 
     const variables = [];
     const modeValues = [];
+    const colId = useExisting ? targetCollection.id : 'tmp_col_' + Date.now();
+    const modeId = useExisting ? targetCollection.defaultModeId : 'tmp_mode_default';
 
-    scales.forEach(scale => {
-      const prefix = scale.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    let createCount = 0, updateCount = 0;
+    const activeScales = [];
 
-      selectedSteps.forEach(stepLabel => {
-        const varId = `tmp_${prefix}_${stepLabel}`;
-        const varName = `${prefix}/${stepLabel}`;
+    for (const scale of manager.scales) {
+      // When no existing collection is targeted, push all scales as new.
+      // When targeting an existing collection, use the per-scale mapping.
+      const target = useExisting ? (scaleMapping[scale.name] || 'skip') : 'new';
+      if (target === 'skip') continue;
+      activeScales.push(scale.name);
 
-        variables.push({
-          action: 'CREATE',
-          id: varId,
-          name: varName,
-          variableCollectionId: colId,
-          resolvedType: 'COLOR'
-        });
+      const localPrefix = scale.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const isNew = target === 'new' || !collectionAnalysis?.prefixes[target];
+      const figmaPrefix = isNew ? localPrefix : target;
+      const existingSteps = isNew ? {} : collectionAnalysis.prefixes[target].vars;
 
-        const existing = scale.steps.find(s => s.label === stepLabel);
-        const hex = existing ? existing.hex : scale.sampleStep(stepLabel).hex;
+      for (const step of steps) {
+        const varName = `${figmaPrefix}/${step}`;
+        const existingVarId = existingSteps[step];
+        const hex = this._hexForStep(scale, step);
 
-        modeValues.push({
-          variableId: varId,
-          modeId: modeId,
-          value: this.hexToFigmaColor(hex)
-        });
-      });
-    });
+        if (existingVarId) {
+          variables.push({ action: 'UPDATE', id: existingVarId, name: varName });
+          modeValues.push({
+            variableId: existingVarId, modeId,
+            value: this.hexToFigmaColor(hex),
+          });
+          updateCount++;
+        } else if (isNew || stepStrategy === 'add-missing') {
+          const tmpId = `tmp_${figmaPrefix}_${step}`;
+          variables.push({
+            action: 'CREATE', id: tmpId, name: varName,
+            variableCollectionId: colId, resolvedType: 'COLOR',
+          });
+          modeValues.push({
+            variableId: tmpId, modeId,
+            value: this.hexToFigmaColor(hex),
+          });
+          createCount++;
+        }
+        // else: existing-only strategy + no existing var at this step → skip
+      }
+    }
 
-    const payload = {
-      variables,
-      variableModeValues: modeValues
-    };
-
+    const payload = { variables, variableModeValues: modeValues };
     if (useExisting) {
-      // Just add variables into the existing collection; no collection/mode ops
       payload.variableCollections = [];
       payload.variableModes = [];
     } else {
       payload.variableCollections = [{
-        action: 'CREATE',
-        id: colId,
+        action: 'CREATE', id: colId,
         name: collectionName || 'Colors',
         initialModeId: modeId
       }];
@@ -114,424 +192,155 @@ class FigmaPusher {
         { action: 'UPDATE', id: modeId, name: 'Default', variableCollectionId: colId }
       ];
     }
-
-    return payload;
+    return { payload, summary: { createCount, updateCount, activeScales } };
   }
 
-  // Push to Figma API
-  async push(pat, fileKey, scales, selectedSteps, collectionName, existingCollection = null) {
-    const payload = this.buildPayload(scales, selectedSteps, collectionName, existingCollection);
-
+  async push(pat, fileKey, manager) {
+    const { payload, summary } = this.buildPayload(manager);
     const res = await fetch(`https://api.figma.com/v1/files/${fileKey}/variables`, {
       method: 'POST',
-      headers: {
-        'X-Figma-Token': pat,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'X-Figma-Token': pat, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-
     const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.message || data.err || `API error ${res.status}`);
-    }
-
-    return {
-      status: res.status,
-      variablesCreated: payload.variables.length,
-      collection: collectionName,
-      response: data
-    };
+    if (!res.ok) throw new Error(data.message || data.err || `API error ${res.status}`);
+    return { status: res.status, summary, response: data };
   }
 
-  // Generate a curl command as fallback
-  generateCurl(pat, fileKey, scales, selectedSteps, collectionName, existingCollection = null) {
-    const payload = this.buildPayload(scales, selectedSteps, collectionName, existingCollection);
+  generateCurl(pat, fileKey, manager) {
+    const { payload } = this.buildPayload(manager);
     const json = JSON.stringify(payload);
-    // Escape single quotes for shell
     const escaped = json.replace(/'/g, "'\\''");
     return `curl -X POST 'https://api.figma.com/v1/files/${fileKey}/variables' \\\n  -H 'X-Figma-Token: ${pat}' \\\n  -H 'Content-Type: application/json' \\\n  -d '${escaped}'`;
   }
 
-  // Save/load preferences
+  // --- Persistence ---
+
   savePref(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
   loadPref(key) { try { return localStorage.getItem(key) || ''; } catch(e) { return ''; } }
 
-  // Render the Figma API panel inside an export modal section
+  // --- UI ---
+
   renderPanel(container, manager) {
-    const savedPat = this.loadPref(this.STORAGE_KEY_PAT);
-    const savedFile = this.loadPref(this.STORAGE_KEY_FILE);
-    const savedCollection = this.loadPref(this.STORAGE_KEY_COLLECTION) || 'Colors';
-    const savedStepsPref = this.loadPref(this.STORAGE_KEY_STEPS) || 'major';
-
-    container.innerHTML = '';
+    this._container = container;
+    this._manager = manager;
+    this.state = this._initState();
     container.className = 'figma-api-panel';
-
-    // Step presets from the live manager (respects per-set step config)
-    const MAJOR = this._majorSteps(manager);
-    const ALL = this._allSteps(manager);
-
-    // State
-    let stepPreset = savedStepsPref;
-    // Migrate: old chip-picker saved JSON.stringify(array) → "[0,50,...]".
-    // Strip brackets if present so parsing works with the new plain-text format.
-    let customStepsText = (this.loadPref(this.STORAGE_KEY_STEPS + '-list') || ALL.join(', '))
-      .replace(/^\s*\[|\]\s*$/g, '');
-    let selectedSteps;
-    let stepError = '';
-
-    // Collection state: null = create new with name input; object = target existing
-    let loadedCollections = null;  // null = not loaded yet; [] = loaded, empty; [...] = loaded
-    let targetCollection = null;   // {id, name, defaultModeId, variableCount} when using existing
-    let collectionLoadError = '';
-
-    // Parse step selection from current preset + validate custom text
-    const resolveSteps = () => {
-      stepError = '';
-      if (stepPreset === 'major') return [...MAJOR];
-      if (stepPreset === 'all') return [...ALL];
-      // custom — parse the textarea (same validator as settings popover)
-      try {
-        // For Figma export we don't need the 0/900 endpoint rule — any subset
-        // is valid. So parse manually: ints 0–900, sorted/deduped.
-        const raw = customStepsText.split(/[,\s]+/).filter(Boolean);
-        if (raw.length === 0) throw new Error('No steps');
-        const nums = raw.map(s => {
-          const n = Number(s);
-          if (!Number.isInteger(n) || n < 0 || n > 900) {
-            throw new Error(`Invalid step "${s}"`);
-          }
-          return n;
-        });
-        return [...new Set(nums)].sort((a, b) => a - b);
-      } catch (e) {
-        stepError = e.message;
-        return [];
-      }
-    };
-    selectedSteps = resolveSteps();
-
-    const render = () => {
-      const scaleCount = manager.scales.length;
-      const varCount = scaleCount * selectedSteps.length;
-
-      container.innerHTML = `
-        <div class="fap-section">
-          <div class="fap-section-title">
-            ${icon('key',13)}
-            Connection
-          </div>
-          <div class="fap-field">
-            <label class="fap-label">Personal Access Token</label>
-            <div class="fap-input-row">
-              <input type="password" class="fap-input fap-input-mono" id="fap-pat" 
-                placeholder="figd_..." value="${this._escHtml(savedPat)}" autocomplete="off" spellcheck="false">
-              <button class="btn btn-ghost btn-icon-only fap-toggle-vis" data-target="fap-pat" title="Show/hide">
-                ${icon('eye',14)}
-              </button>
-            </div>
-            <div class="fap-hint">
-              <label class="fap-checkbox-label">
-                <input type="checkbox" id="fap-remember" ${savedPat ? 'checked' : ''}>
-                Remember token
-              </label>
-              <span class="fap-hint-sep">·</span>
-              <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener" class="fap-link">
-                How to create a token ↗
-              </a>
-            </div>
-            <div class="fap-hint" style="margin-top:2px; opacity:0.65">
-              Requires <code>file_variables:write</code> scope
-            </div>
-          </div>
-          <div class="fap-field">
-            <label class="fap-label">Figma file URL or key</label>
-            <input type="text" class="fap-input" id="fap-file" 
-              placeholder="https://figma.com/design/abc123/... or abc123" 
-              value="${this._escHtml(savedFile)}" spellcheck="false">
-            <div class="fap-hint fap-file-key-preview" id="fap-file-preview"></div>
-          </div>
-        </div>
-
-        <div class="fap-section">
-          <div class="fap-section-title">
-            ${icon('folders',13)}
-            Collection
-          </div>
-          ${this._renderCollectionSection(savedCollection, loadedCollections, targetCollection, collectionLoadError)}
-          <div class="fap-field">
-            <label class="fap-label">Variable naming</label>
-            <div class="fap-naming-preview">
-              ${manager.scales.slice(0, 3).map(s => {
-                const p = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-');
-                return `<code>${p}/0</code> <code>${p}/500</code> <code>${p}/900</code>`;
-              }).join(' ')}
-              ${manager.scales.length > 3 ? '<span class="fap-hint">…</span>' : ''}
-            </div>
-          </div>
-        </div>
-
-        <div class="fap-section">
-          <div class="fap-section-title">
-            ${icon('sliders-horizontal',13)}
-            Steps
-          </div>
-          <div class="fap-step-presets">
-            <button class="btn btn-sm ${stepPreset === 'major' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="major">
-              Major (${MAJOR.length})
-            </button>
-            <button class="btn btn-sm ${stepPreset === 'all' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="all">
-              All (${ALL.length})
-            </button>
-            <button class="btn btn-sm ${stepPreset === 'custom' ? 'btn-primary' : 'btn-secondary'} fap-preset-btn" data-preset="custom">
-              Custom
-            </button>
-          </div>
-          <textarea class="field field-mono fap-steps-textarea" id="fap-custom-steps" rows="3"
-            spellcheck="false" ${stepPreset !== 'custom' ? 'readonly' : ''}
-            placeholder="0, 50, 100, 200, …">${this._escHtml(
-              stepPreset === 'custom' ? customStepsText : selectedSteps.join(', ')
-            )}</textarea>
-          ${stepError ? `<div class="fap-step-error">${this._escHtml(stepError)}</div>` : ''}
-        </div>
-
-        <div class="fap-section fap-summary">
-          <div class="fap-summary-line">
-            <span class="fap-summary-count">${scaleCount}</span> scales ×
-            <span class="fap-summary-count">${selectedSteps.length}</span> steps =
-            <span class="fap-summary-count">${varCount}</span> variables
-          </div>
-          <div class="fap-scales-list">
-            ${manager.scales.map(s => `<span class="fap-scale-chip">${this._escHtml(s.name)}</span>`).join('')}
-          </div>
-        </div>
-
-        <div class="fap-actions">
-          <button class="btn btn-primary fap-push-btn" id="fap-push">
-            ${icon('cloud-arrow-up',15)}
-            Push to Figma
-          </button>
-          <button class="btn btn-secondary fap-curl-btn" id="fap-curl" title="Copy as curl command">
-            ${icon('terminal',14)}
-            Copy curl
-          </button>
-        </div>
-        <div class="fap-status" id="fap-status"></div>
-      `;
-
-      // --- Bind events ---
-
-      // Toggle password visibility
-      container.querySelector('.fap-toggle-vis').addEventListener('click', () => {
-        const inp = container.querySelector('#fap-pat');
-        const toggleBtn = container.querySelector('.fap-toggle-vis');
-        if (inp.type === 'password') {
-          inp.type = 'text';
-          toggleBtn.innerHTML = icon('eye-slash',14);
-        } else {
-          inp.type = 'password';
-          toggleBtn.innerHTML = icon('eye',14);
-        }
-      });
-
-      // File key preview
-      const fileInput = container.querySelector('#fap-file');
-      const filePreview = container.querySelector('#fap-file-preview');
-      const updateFilePreview = () => {
-        const key = this.parseFileKey(fileInput.value);
-        filePreview.textContent = key ? `File key: ${key}` : (fileInput.value.trim() ? 'Could not extract file key' : '');
-        filePreview.style.color = key ? '' : 'var(--color-red-500, #a63244)';
-      };
-      fileInput.addEventListener('input', updateFilePreview);
-      updateFilePreview();
-
-      // Step presets
-      container.querySelectorAll('.fap-preset-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          stepPreset = btn.dataset.preset;
-          this.savePref(this.STORAGE_KEY_STEPS, stepPreset);
-          selectedSteps = resolveSteps();
-          render();
-        });
-      });
-
-      // Custom steps textarea — live-validate, save on input.
-      // Textarea is always rendered now (readonly for presets) but only
-      // editable + persisted in custom mode.
-      const ta = container.querySelector('#fap-custom-steps');
-      if (stepPreset === 'custom') {
-        ta.addEventListener('input', () => {
-          customStepsText = ta.value;
-          this.savePref(this.STORAGE_KEY_STEPS + '-list', customStepsText);
-          selectedSteps = resolveSteps();
-          // Update just the error + summary without a full re-render to keep focus
-          const errEl = container.querySelector('.fap-step-error');
-          if (stepError) {
-            if (errEl) errEl.textContent = stepError;
-            else ta.insertAdjacentHTML('afterend', `<div class="fap-step-error">${this._escHtml(stepError)}</div>`);
-          } else if (errEl) {
-            errEl.remove();
-          }
-          const countEls = container.querySelectorAll('.fap-summary-count');
-          if (countEls.length >= 3) {
-            countEls[1].textContent = selectedSteps.length;
-            countEls[2].textContent = manager.scales.length * selectedSteps.length;
-          }
-        });
-      } else {
-        // Clicking the readonly textarea when on a preset switches to custom
-        // pre-filled with that preset's values — quick path from preset→edit.
-        ta.addEventListener('click', () => {
-          customStepsText = selectedSteps.join(', ');
-          stepPreset = 'custom';
-          this.savePref(this.STORAGE_KEY_STEPS, 'custom');
-          this.savePref(this.STORAGE_KEY_STEPS + '-list', customStepsText);
-          render();
-        });
-      }
-
-      // Collection: load existing collections
-      const loadBtn = container.querySelector('#fap-load-collections');
-      if (loadBtn) {
-        loadBtn.addEventListener('click', async () => {
-          const pat = container.querySelector('#fap-pat').value.trim();
-          const fileKey = this.parseFileKey(container.querySelector('#fap-file').value);
-          if (!pat || !fileKey) {
-            collectionLoadError = 'Enter token and file URL first';
-            render();
-            return;
-          }
-          loadBtn.disabled = true;
-          loadBtn.innerHTML = icon('spinner',13) + ' Loading…';
-          loadBtn.querySelector('svg').style.animation = 'spin 1s linear infinite';
-          collectionLoadError = '';
-          try {
-            loadedCollections = await this.fetchCollections(pat, fileKey);
-          } catch (e) {
-            loadedCollections = null;
-            const msg = e.message || String(e);
-            collectionLoadError = msg.includes('Failed to fetch') || msg.includes('CORS')
-              ? 'CORS blocked — try running this over HTTP instead of file://'
-              : msg;
-          }
-          render();
-        });
-      }
-
-      // Collection: pick an existing one
-      container.querySelectorAll('.fap-collection-item').forEach(item => {
-        item.addEventListener('click', () => {
-          const colId = item.dataset.colId;
-          if (colId === '__new__') {
-            targetCollection = null;
-          } else {
-            targetCollection = loadedCollections.find(c => c.id === colId);
-          }
-          render();
-        });
-      });
-
-      // Push button
-      container.querySelector('#fap-push').addEventListener('click', async () => {
-        const pat = container.querySelector('#fap-pat').value.trim();
-        const fileRaw = container.querySelector('#fap-file').value.trim();
-        const fileKey = this.parseFileKey(fileRaw);
-        // #fap-collection is absent when targeting an existing collection
-        const collectionInput = container.querySelector('#fap-collection');
-        const collection = collectionInput ? (collectionInput.value.trim() || 'Colors') : 'Colors';
-        const remember = container.querySelector('#fap-remember').checked;
-
-        // Save preferences
-        this.savePref(this.STORAGE_KEY_PAT, remember ? pat : '');
-        this.savePref(this.STORAGE_KEY_FILE, fileRaw);
-        if (collectionInput) this.savePref(this.STORAGE_KEY_COLLECTION, collection);
-
-        const statusEl = container.querySelector('#fap-status');
-
-        if (!pat) { this._showStatus(statusEl, 'error', 'Please enter your Personal Access Token'); return; }
-        if (!fileKey) { this._showStatus(statusEl, 'error', 'Please enter a valid Figma file URL or key'); return; }
-        if (selectedSteps.length === 0) { this._showStatus(statusEl, 'error', 'Select at least one step'); return; }
-
-        const pushBtn = container.querySelector('#fap-push');
-        pushBtn.disabled = true;
-        pushBtn.innerHTML = icon('spinner',15) + ' Pushing…';
-          pushBtn.querySelector('svg').style.animation = 'spin 1s linear infinite';
-        const targetDesc = targetCollection ? `existing collection "${targetCollection.name}"` : `new collection "${collection}"`;
-        this._showStatus(statusEl, 'info', `Creating ${manager.scales.length * selectedSteps.length} variables in ${targetDesc}…`);
-
-        try {
-          const result = await this.push(pat, fileKey, manager.scales, selectedSteps, collection, targetCollection);
-          pushBtn.innerHTML = icon('check',15) + ' Done!';
-          this._showStatus(statusEl, 'success',
-            `✓ Created ${result.variablesCreated} variables in ${targetDesc}. ` +
-            `<a href="https://www.figma.com/design/${fileKey}" target="_blank" rel="noopener">Open file ↗</a>`
-          );
-        } catch (err) {
-          pushBtn.disabled = false;
-          pushBtn.innerHTML = icon('cloud-arrow-up',15) + ' Push to Figma';
-          const msg = err.message || String(err);
-          if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
-            this._showStatus(statusEl, 'error',
-              'Network error — likely a CORS restriction in this preview environment. ' +
-              'Use the <strong>Copy curl</strong> button and run it in your terminal instead.'
-            );
-          } else {
-            this._showStatus(statusEl, 'error', `Error: ${this._escHtml(msg)}`);
-          }
-        }
-      });
-
-      // Curl fallback
-      container.querySelector('#fap-curl').addEventListener('click', () => {
-        const pat = container.querySelector('#fap-pat').value.trim() || '<YOUR_PAT>';
-        const fileRaw = container.querySelector('#fap-file').value.trim();
-        const fileKey = this.parseFileKey(fileRaw) || '<FILE_KEY>';
-        const collectionInput = container.querySelector('#fap-collection');
-        const collection = collectionInput ? (collectionInput.value.trim() || 'Colors') : 'Colors';
-        const statusEl = container.querySelector('#fap-status');
-
-        const curl = this.generateCurl(pat, fileKey, manager.scales, selectedSteps, collection, targetCollection);
-        navigator.clipboard.writeText(curl).then(() => {
-          this._showStatus(statusEl, 'success', 'Curl command copied to clipboard. Paste it in your terminal.');
-        }).catch(() => {
-          // Fallback: show in a textarea
-          this._showStatus(statusEl, 'info', `<pre class="fap-curl-output">${this._escHtml(curl)}</pre>`);
-        });
-      });
-    };
-
-    render();
+    this._render();
   }
 
-  // Collection section markup — switches between:
-  //   (a) not loaded: name input + "Load existing collections" button
-  //   (b) loaded: radio-style list (existing collections + "Create new")
-  _renderCollectionSection(savedName, loaded, target, error) {
-    // Not-yet-loaded / error → simple text input + load button
-    if (loaded === null) {
+  _render() {
+    const container = this._container;
+    const manager = this._manager;
+    const s = this.state;
+
+    const fileKey = this.parseFileKey(s.fileUrl);
+    const { summary } = this.buildPayload(manager);
+
+    container.innerHTML = `
+      <div class="fap-section">
+        <div class="fap-section-title">${icon('key',13)} Connection</div>
+        <div class="fap-field">
+          <label class="fap-label">Personal Access Token</label>
+          <div class="fap-input-row">
+            <input type="password" class="fap-input fap-input-mono" id="fap-pat"
+              placeholder="figd_..." value="${this._escHtml(s.pat)}" autocomplete="off" spellcheck="false">
+            <button class="btn btn-ghost btn-icon-only fap-toggle-vis" data-target="fap-pat" title="Show/hide">
+              ${icon('eye',14)}
+            </button>
+          </div>
+          <div class="fap-hint">
+            <label class="fap-checkbox-label">
+              <input type="checkbox" id="fap-remember" ${s.pat ? 'checked' : ''}>
+              Remember token
+            </label>
+            <span class="fap-hint-sep">·</span>
+            <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener" class="fap-link">
+              How to create a token ↗
+            </a>
+          </div>
+          <div class="fap-hint" style="margin-top:2px; opacity:0.65">
+            Requires <code>file_variables:write</code> scope
+          </div>
+        </div>
+        <div class="fap-field">
+          <label class="fap-label">Figma file URL or key</label>
+          <div class="fap-input-row">
+            <input type="text" class="fap-input" id="fap-file"
+              placeholder="https://figma.com/design/abc123/... or abc123"
+              value="${this._escHtml(s.fileUrl)}" spellcheck="false">
+            <button class="btn btn-secondary btn-sm" id="fap-load" ${s.loading ? 'disabled' : ''}>
+              ${s.loading ? icon('spinner',13) + ' Loading…' : icon('arrow-clockwise',13) + ' Load'}
+            </button>
+          </div>
+          <div class="fap-hint fap-file-key-preview" id="fap-file-preview">${
+            fileKey ? `File key: ${this._escHtml(fileKey)}` : (s.fileUrl.trim() ? 'Could not extract file key' : '')
+          }</div>
+          ${s.loadError ? `<div class="fap-hint" style="color:var(--danger)">${this._escHtml(s.loadError)}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="fap-section">
+        <div class="fap-section-title">${icon('folders',13)} Collection</div>
+        ${this._renderCollectionSection()}
+      </div>
+
+      ${s.targetCollection ? this._renderMappingSection(manager) : ''}
+
+      <div class="fap-section fap-summary">
+        <div class="fap-summary-line">
+          ${summary.activeScales.length} ${summary.activeScales.length === 1 ? 'scale' : 'scales'} →
+          ${summary.updateCount > 0 ? `<span class="fap-summary-count">${summary.updateCount}</span> UPDATE` : ''}
+          ${summary.updateCount > 0 && summary.createCount > 0 ? ', ' : ''}
+          ${summary.createCount > 0 ? `<span class="fap-summary-count">${summary.createCount}</span> CREATE` : ''}
+          ${summary.updateCount === 0 && summary.createCount === 0 ? '<span class="fap-summary-dim">no variables</span>' : ''}
+        </div>
+        ${summary.activeScales.length > 0 ? `
+          <div class="fap-scales-list">
+            ${summary.activeScales.map(n => `<span class="fap-scale-chip">${this._escHtml(n)}</span>`).join('')}
+          </div>` : ''}
+      </div>
+
+      <div class="fap-actions">
+        <button class="btn btn-secondary fap-curl-btn" id="fap-curl" title="Copy as curl command">
+          ${icon('terminal',14)} Copy curl
+        </button>
+        <button class="btn btn-primary fap-push-btn" id="fap-push">
+          ${icon('cloud-arrow-up',15)} Push to Figma
+        </button>
+      </div>
+      <div class="fap-status" id="fap-status"></div>
+    `;
+
+    this._bindEvents();
+  }
+
+  _renderCollectionSection() {
+    const s = this.state;
+    if (s.loadedCollections === null) {
+      // Not loaded yet — just show the create-new name input
       return `
         <div class="fap-field">
           <label class="fap-label">Collection name</label>
-          <div class="fap-input-row">
-            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(savedName)}">
-            <button class="btn btn-secondary btn-sm" id="fap-load-collections" data-tooltip="Fetch collections from this file">
-              ${icon('arrow-clockwise',13)} Load existing
-            </button>
-          </div>
-          ${error ? `<div class="fap-hint" style="color:var(--danger)">${this._escHtml(error)}</div>` : ''}
+          <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(s.collectionName)}">
+          <div class="fap-hint">Click <strong>Load</strong> above to fetch existing collections from the file.</div>
         </div>
       `;
     }
-    // Loaded → picker list. Existing collections first, "Create new" last
-    // so it sits adjacent to the name input below.
-    const newIsActive = target === null;
+    // Loaded — radio-style picker
+    const newIsActive = s.targetCollection === null;
     return `
       <div class="fap-field">
-        <label class="fap-label">Target collection</label>
         <div class="fap-collections-list">
-          ${loaded.map(c => {
-            const active = target?.id === c.id;
+          <button class="fap-collection-item ${newIsActive ? 'active' : ''}" data-col-id="__new__">
+            <span class="fap-col-radio"></span>
+            <span class="fap-col-info">
+              <span class="fap-col-name">Create new</span>
+              <span class="fap-col-meta">${s.loadedCollections.length === 0 ? 'No existing collections found' : ''}</span>
+            </span>
+          </button>
+          ${s.loadedCollections.map(c => {
+            const active = s.targetCollection?.id === c.id;
             const modeStr = c.modes.length > 1
               ? `${c.modes.length} modes (${c.modes.map(m => this._escHtml(m.name)).join(', ')})`
               : '1 mode';
@@ -545,30 +354,247 @@ class FigmaPusher {
               </button>
             `;
           }).join('')}
-          <button class="fap-collection-item ${newIsActive ? 'active' : ''}" data-col-id="__new__">
-            <span class="fap-col-radio"></span>
-            <span class="fap-col-info">
-              <span class="fap-col-name">Create new</span>
-              <span class="fap-col-meta">${loaded.length === 0 ? 'No existing collections found' : ''}</span>
-            </span>
-          </button>
         </div>
         ${newIsActive ? `
           <div class="fap-input-row" style="margin-block-start:8px">
-            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(savedName)}" placeholder="New collection name">
-            <button class="btn btn-secondary btn-sm" id="fap-load-collections" data-tooltip="Reload">
-              ${icon('arrow-clockwise',13)}
-            </button>
+            <input type="text" class="fap-input" id="fap-collection" value="${this._escHtml(s.collectionName)}" placeholder="New collection name">
           </div>
-        ` : `
-          <div class="fap-hint" style="margin-block-start:8px">
-            Variables will be <strong>added</strong> to "${this._escHtml(target.name)}" using its default mode.
-            Existing variables are kept.
-            <button class="btn btn-ghost btn-sm" id="fap-load-collections" style="padding:2px 6px">${icon('arrow-clockwise',11)} Reload</button>
-          </div>
-        `}
+        ` : ''}
       </div>
     `;
+  }
+
+  _renderMappingSection(manager) {
+    const s = this.state;
+    const analysis = s.collectionAnalysis;
+    if (!analysis) return '';
+
+    const figmaSteps = [...analysis.allSteps].sort((a, b) => a - b);
+    const localSteps = manager.stepLabels;
+    const mismatch = figmaSteps.length > 0 && !this._stepsEqual(figmaSteps, localSteps);
+
+    const prefixOptions = Object.keys(analysis.prefixes);
+
+    return `
+      <div class="fap-section">
+        <div class="fap-section-title">${icon('sliders-horizontal',13)} Mapping</div>
+        ${mismatch ? `
+          <div class="fap-mismatch-notice">
+            ${icon('warning',13)}
+            <div class="fap-mismatch-text">
+              <div>Collection has steps <code>${figmaSteps.slice(0,6).join(',')}${figmaSteps.length > 6 ? '…' : ''}</code> (${figmaSteps.length}) — ChromaScale has ${localSteps.length} steps.</div>
+              <div style="margin-block-start:6px">
+                <label class="fap-label" style="display:inline; margin-inline-end:6px">Strategy:</label>
+                <select class="field fap-strategy-select" id="fap-strategy">
+                  <option value="existing-only" ${s.stepStrategy === 'existing-only' ? 'selected' : ''}>Update existing steps only</option>
+                  <option value="add-missing" ${s.stepStrategy === 'add-missing' ? 'selected' : ''}>Add missing steps</option>
+                </select>
+              </div>
+            </div>
+          </div>` : ''}
+        <div class="fap-mapping-table">
+          <div class="fap-mapping-header">
+            <span>Local</span><span></span><span>Figma</span><span></span>
+          </div>
+          ${manager.scales.map(scale => {
+            const sel = s.scaleMapping[scale.name] || 'skip';
+            const figmaMatch = analysis.prefixes[sel];
+            return `
+              <div class="fap-mapping-row">
+                <span class="fap-local-name">${this._escHtml(scale.name)}</span>
+                <span class="fap-mapping-arrow">→</span>
+                <select class="field fap-mapping-select" data-scale="${this._escHtml(scale.name)}">
+                  <option value="skip" ${sel === 'skip' ? 'selected' : ''}>(skip)</option>
+                  <option value="new" ${sel === 'new' ? 'selected' : ''}>+ create new</option>
+                  ${prefixOptions.map(p =>
+                    `<option value="${this._escHtml(p)}" ${sel === p ? 'selected' : ''}>${this._escHtml(p)}</option>`
+                  ).join('')}
+                </select>
+                <span class="fap-mapping-meta">${figmaMatch ? `${figmaMatch.steps.length} vars` : ''}</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  _bindEvents() {
+    const container = this._container;
+    const manager = this._manager;
+    const s = this.state;
+
+    // PAT — targeted update (no full render to preserve focus)
+    const patInput = container.querySelector('#fap-pat');
+    patInput.addEventListener('input', () => { s.pat = patInput.value; });
+
+    // Toggle PAT visibility
+    container.querySelector('.fap-toggle-vis').addEventListener('click', () => {
+      const toggleBtn = container.querySelector('.fap-toggle-vis');
+      if (patInput.type === 'password') {
+        patInput.type = 'text';
+        toggleBtn.innerHTML = icon('eye-slash',14);
+      } else {
+        patInput.type = 'password';
+        toggleBtn.innerHTML = icon('eye',14);
+      }
+    });
+
+    // File URL — targeted update + persist on blur
+    const fileInput = container.querySelector('#fap-file');
+    const filePreview = container.querySelector('#fap-file-preview');
+    fileInput.addEventListener('input', () => {
+      s.fileUrl = fileInput.value;
+      const key = this.parseFileKey(s.fileUrl);
+      filePreview.textContent = key ? `File key: ${key}` : (s.fileUrl.trim() ? 'Could not extract file key' : '');
+      filePreview.style.color = key ? '' : 'var(--danger)';
+    });
+    fileInput.addEventListener('blur', () => this.savePref(this.STORAGE_KEY_FILE, s.fileUrl));
+
+    // Load button — fetch collections + variables
+    const loadBtn = container.querySelector('#fap-load');
+    loadBtn.addEventListener('click', async () => {
+      const pat = s.pat.trim();
+      const fileKey = this.parseFileKey(s.fileUrl);
+      if (!pat || !fileKey) {
+        s.loadError = 'Enter token and file URL first';
+        this._render();
+        return;
+      }
+      s.loading = true;
+      s.loadError = '';
+      this._render();
+      const spinner = container.querySelector('#fap-load svg');
+      if (spinner) spinner.style.animation = 'spin 1s linear infinite';
+      try {
+        const { collections, variables } = await this.fetchFile(pat, fileKey);
+        s.loadedCollections = collections;
+        s.allVariables = variables;
+        // Reset target when reloading
+        s.targetCollection = null;
+        s.collectionAnalysis = null;
+        s.scaleMapping = {};
+      } catch (e) {
+        s.loadedCollections = null;
+        const msg = e.message || String(e);
+        s.loadError = msg.includes('Failed to fetch') || msg.includes('CORS')
+          ? 'CORS blocked — try running over HTTP instead of file://'
+          : msg;
+      }
+      s.loading = false;
+      this._render();
+    });
+
+    // Collection picker
+    container.querySelectorAll('.fap-collection-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const colId = item.dataset.colId;
+        if (colId === '__new__') {
+          s.targetCollection = null;
+          s.collectionAnalysis = null;
+          s.scaleMapping = {};
+        } else {
+          s.targetCollection = s.loadedCollections.find(c => c.id === colId);
+          s.collectionAnalysis = this.analyzeCollection(s.allVariables, colId);
+          s.scaleMapping = this.autoMap(manager.scales, s.collectionAnalysis.prefixes);
+        }
+        this._render();
+      });
+    });
+
+    // Collection name input (create-new mode)
+    const colNameInput = container.querySelector('#fap-collection');
+    if (colNameInput) {
+      colNameInput.addEventListener('input', () => {
+        s.collectionName = colNameInput.value;
+      });
+      colNameInput.addEventListener('blur', () => {
+        this.savePref(this.STORAGE_KEY_COLLECTION, s.collectionName);
+      });
+    }
+
+    // Mapping selects
+    container.querySelectorAll('.fap-mapping-select').forEach(sel => {
+      sel.addEventListener('change', () => {
+        s.scaleMapping[sel.dataset.scale] = sel.value;
+        this._render();
+      });
+    });
+
+    // Step strategy select
+    const strategySel = container.querySelector('#fap-strategy');
+    if (strategySel) {
+      strategySel.addEventListener('change', () => {
+        s.stepStrategy = strategySel.value;
+        this._render();
+      });
+    }
+
+    // Push
+    container.querySelector('#fap-push').addEventListener('click', async () => {
+      const pat = s.pat.trim();
+      const fileKey = this.parseFileKey(s.fileUrl);
+      const remember = container.querySelector('#fap-remember').checked;
+      const statusEl = container.querySelector('#fap-status');
+
+      this.savePref(this.STORAGE_KEY_PAT, remember ? pat : '');
+      this.savePref(this.STORAGE_KEY_FILE, s.fileUrl);
+      if (!s.targetCollection) this.savePref(this.STORAGE_KEY_COLLECTION, s.collectionName);
+
+      if (!pat) { this._showStatus(statusEl, 'error', 'Please enter your Personal Access Token'); return; }
+      if (!fileKey) { this._showStatus(statusEl, 'error', 'Please enter a valid Figma file URL or key'); return; }
+
+      const { summary: preSummary } = this.buildPayload(manager);
+      if (preSummary.createCount + preSummary.updateCount === 0) {
+        this._showStatus(statusEl, 'error', 'No variables to push — check your mapping or collection target');
+        return;
+      }
+
+      const pushBtn = container.querySelector('#fap-push');
+      pushBtn.disabled = true;
+      pushBtn.innerHTML = icon('spinner',15) + ' Pushing…';
+      const spinSvg = pushBtn.querySelector('svg');
+      if (spinSvg) spinSvg.style.animation = 'spin 1s linear infinite';
+
+      const targetDesc = s.targetCollection
+        ? `"${s.targetCollection.name}"`
+        : `new collection "${s.collectionName}"`;
+      this._showStatus(statusEl, 'info', `Pushing ${preSummary.updateCount} updates + ${preSummary.createCount} creates to ${targetDesc}…`);
+
+      try {
+        const result = await this.push(pat, fileKey, manager);
+        pushBtn.innerHTML = icon('check',15) + ' Done!';
+        const { createCount, updateCount } = result.summary;
+        this._showStatus(statusEl, 'success',
+          `✓ ${updateCount} updated, ${createCount} created in ${targetDesc}. ` +
+          `<a href="https://www.figma.com/design/${fileKey}" target="_blank" rel="noopener">Open file ↗</a>`
+        );
+      } catch (err) {
+        pushBtn.disabled = false;
+        pushBtn.innerHTML = icon('cloud-arrow-up',15) + ' Push to Figma';
+        const msg = err.message || String(err);
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
+          this._showStatus(statusEl, 'error',
+            'Network error — likely a CORS restriction when running from file://. ' +
+            'Use <strong>Copy curl</strong> and run it in your terminal instead.'
+          );
+        } else {
+          this._showStatus(statusEl, 'error', `Error: ${this._escHtml(msg)}`);
+        }
+      }
+    });
+
+    // Curl
+    container.querySelector('#fap-curl').addEventListener('click', () => {
+      const pat = s.pat.trim() || '<YOUR_PAT>';
+      const fileKey = this.parseFileKey(s.fileUrl) || '<FILE_KEY>';
+      const statusEl = container.querySelector('#fap-status');
+      const curl = this.generateCurl(pat, fileKey, manager);
+      navigator.clipboard.writeText(curl).then(() => {
+        this._showStatus(statusEl, 'success', 'Curl command copied to clipboard. Paste it in your terminal.');
+      }).catch(() => {
+        this._showStatus(statusEl, 'info', `<pre class="fap-curl-output">${this._escHtml(curl)}</pre>`);
+      });
+    });
   }
 
   _showStatus(el, type, msg) {
