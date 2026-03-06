@@ -2,7 +2,7 @@
 // Compact 35-step layout with contrast constraint enforcement
 
 const DEFAULTS = {
-  Gray: ["#faf9f5","#f5f4ed","#f0eee6","#e8e6dc","#dedcd1","#d1cfc5","#c2c0b6","#b0aea5","#9c9a92","#87867f","#73726c","#5e5d59","#4d4c48","#3d3d3a","#30302e","#262624","#1f1e1d","#1a1918","#141413"],
+  Gray: ["#C3C2B8","#74726E","#4C4B49","#2C2C2A"],
   Red: ["#fceded","#f7c1c1","#f09595","#e86b6b","#e04343","#b53333","#8a2424","#5c1616","#300b0b"],
   Orange: ["#faefeb","#f5cbbc","#f2a88f","#ed8461","#e86235","#ba4c27","#8c3619","#5e230f","#301107"],
   Yellow: ["#faf3e8","#fae1b9","#facf89","#fabd5a","#faa72a","#c77f1a","#965b0e","#633806","#301901"],
@@ -660,6 +660,7 @@ class App {
             <li><a href="https://www.w3.org/TR/css-color-4/#ok-lab" target="_blank" rel="noopener">CSS Color Module Level 4 — OKLab and OKLCH</a></li>
           </ul>
         </section>
+        <!-- Feedback & License — re-enable once repo is public
         <section>
           <h3>Feedback & License</h3>
           <p>
@@ -667,15 +668,12 @@ class App {
             · MIT License
           </p>
         </section>
-        <section>
-          <h3>Thanks</h3>
-          <p>
-            Inspired by work on the <strong>Sail design system at Stripe</strong>.
-            Thanks to <strong>Koop</strong>, <strong>Vince Joy</strong>, and
-            <strong>Chase McCoy</strong> for the conversations and prior art that
-            shaped this.
-          </p>
-        </section>
+        -->
+        <hr class="about-divider">
+        <p class="about-credit">
+          Created by Hugo Baeta with Claude Code, and with the support and inspiration
+          taken from many color theory conversations with Koop, Vince Joy, and Chase McCoy.
+        </p>
       </div>
     `;
     overlay.appendChild(modal);

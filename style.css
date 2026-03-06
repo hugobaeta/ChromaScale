@@ -569,6 +569,12 @@ select.field:is(:open, :focus) {
   text-decoration: none;
 }
 .about-refs a:hover { color: var(--text); text-decoration: underline; }
+.about-divider {
+  border: none;
+  border-block-start: var(--hairline) solid var(--border-faint);
+  margin-block: 18px 14px;
+}
+.about-credit { font-style: italic; }
 .about-diagram {
   display: block;
   inline-size: 100%;
